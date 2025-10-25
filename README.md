@@ -9,7 +9,7 @@ AI 智能柜台监控 Demo 系统是一个基于 **Next.js + Tailwind CSS + Radi
 - [Radix UI](https://www.radix-ui.com/) + [ShadCN UI 组件库](https://ui.shadcn.com/)
 - [Lucide Icons](https://lucide.dev/) 图标
 - Next.js API Route 代理后端 FastAPI 服务
-- [FastAPI](https://fastapi.tiangolo.com/) + [YOLOv8n Banknote](https://huggingface.co/keremberke/yolov8n-banknote) 现金检测推理后端
+- [FastAPI](https://fastapi.tiangolo.com/) + [BanknotesRecognition](https://huggingface.co/Rokyuto/BanknotesRecognition) 现金检测推理后端
 
 ## 目录结构
 ```
@@ -66,7 +66,7 @@ styles/
    - 若未配置或后端异常，前端会自动返回模拟数据，便于无后端情况下的演示。
 
 ### 现金检测权重与阈值调优
-- 默认模型：首次启动会自动尝试将 Hugging Face 上的 `keremberke/yolov8n-banknote` 权重下载到 `backend/models/yolov8n-banknote.pt`。
+- 默认模型：首次启动会自动尝试将 Hugging Face 上的 `Rokyuto/BanknotesRecognition` 权重（`best.pt`）下载到 `backend/models/yolov8n-banknote.pt`。
 - 自定义路径：通过环境变量 `YOLO_WEIGHTS` 指定本地 `.pt` 文件或目录（会自动追加默认文件名）。
 - 自定义远程地址：如需从内部制品库下载，可设置 `YOLO_REMOTE_WEIGHTS_URL` 为可访问的权重链接。
 - 样本采样：可通过 `MAX_SAMPLED_FRAMES` 与 `FRAME_SAMPLE_INTERVAL_SECONDS` 控制关键帧数量和采样间隔。

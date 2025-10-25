@@ -20,7 +20,7 @@ APP_VERSION = "1.0.0"
 MAX_SAMPLED_FRAMES = int(os.getenv("MAX_SAMPLED_FRAMES", "24"))
 FRAME_SAMPLE_INTERVAL_SECONDS = float(os.getenv("FRAME_SAMPLE_INTERVAL_SECONDS", "0.5"))
 DEFAULT_WEIGHTS_NAME = "yolov8n-banknote.pt"
-DEFAULT_REMOTE_WEIGHTS = "https://huggingface.co/keremberke/yolov8n-banknote/resolve/main/yolov8n-banknote.pt"
+DEFAULT_REMOTE_WEIGHTS = "https://huggingface.co/Rokyuto/BanknotesRecognition/resolve/main/best.pt"
 
 YOLO_WEIGHTS_PATH = os.getenv(
     "YOLO_WEIGHTS",
