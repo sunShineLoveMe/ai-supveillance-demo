@@ -14,6 +14,11 @@ from fastapi.responses import JSONResponse
 from ultralytics import YOLO
 from ultralytics.utils.downloads import download
 
+try:
+    from huggingface_hub import hf_hub_download
+except Exception:  # pragma: no cover - optional dependency for HF downloads
+    hf_hub_download = None  # type: ignore[assignment]
+
 APP_TITLE = "AI Smart Counter Monitor Backend"
 APP_VERSION = "1.0.0"
 
@@ -64,6 +69,34 @@ def _ensure_weights() -> Path:
             f"未找到 YOLO 模型权重文件：{weights_path}. 请通过 YOLO_WEIGHTS 或 YOLO_REMOTE_WEIGHTS_URL 指定有效路径。"
         )
 
+    try:
+        downloaded_path = _download_weights(remote_url, weights_path)
+    except Exception as download_error:  # pragma: no cover - network errors bubble up with context
+        raise FileNotFoundError(
+            f"无法从 {remote_url} 下载 YOLO 权重到 {weights_path}. 请检查网络或手动放置模型文件。"
+        ) from download_error
+
+    if not downloaded_path.exists() or downloaded_path.stat().st_size == 0:
+        raise FileNotFoundError(
+            f"下载的 YOLO 权重文件无效：{downloaded_path}. 请确认远程地址是否正确。"
+        )
+
+    if downloaded_path.resolve() != weights_path.resolve():
+        from shutil import move
+
+        move(str(downloaded_path), weights_path)
+
+    return weights_path
+
+
+def _download_weights(remote_url: str, weights_path: Path) -> Path:
+    """Download YOLO weights handling Hugging Face repositories explicitly."""
+
+    if "huggingface.co" in remote_url:
+        hf_path = _download_from_huggingface(remote_url, weights_path.parent)
+        if hf_path is not None:
+            return hf_path
+
     downloaded = download(remote_url, dir=str(weights_path.parent), unzip=False, delete=False)
 
     if isinstance(downloaded, (list, tuple)):
@@ -72,16 +105,43 @@ def _ensure_weights() -> Path:
         candidates = [Path(str(downloaded))]
 
     for candidate in candidates:
-        if candidate.exists():
-            if candidate.resolve() == weights_path.resolve():
-                return weights_path
-            if candidate.suffix == ".pt":
-                candidate.rename(weights_path)
-                return weights_path
+        if candidate.exists() and candidate.suffix == ".pt":
+            return candidate
 
-    raise FileNotFoundError(
-        f"无法从 {remote_url} 下载 YOLO 权重到 {weights_path}. 请检查网络或手动放置模型文件。"
-    )
+    raise FileNotFoundError(f"未能识别有效的模型文件：{remote_url}")
+
+
+def _download_from_huggingface(remote_url: str, target_dir: Path) -> Path | None:
+    if hf_hub_download is None:
+        return None
+
+    from urllib.parse import urlparse
+
+    parsed = urlparse(remote_url)
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 5 or "resolve" not in parts:
+        return None
+
+    resolve_index = parts.index("resolve")
+    if resolve_index < 2 or resolve_index + 2 >= len(parts):
+        return None
+
+    repo_id = "/".join(parts[:resolve_index])
+    revision = parts[resolve_index + 1]
+    filename = "/".join(parts[resolve_index + 2 :])
+
+    try:
+        local_file = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            revision=revision,
+            local_dir=str(target_dir),
+            local_dir_use_symlinks=False,
+        )
+    except Exception:
+        return None
+
+    return Path(local_file)
 
 
 model: YOLO | None = None

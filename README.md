@@ -60,6 +60,7 @@ styles/
    pip install -r backend/requirements.txt
    uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
    ```
+   - 依赖项中已包含 `huggingface-hub`，用于自动从 Hugging Face 拉取现金检测权重；如处于离线环境，可手动下载模型后放置到 `backend/models/` 目录并通过 `YOLO_WEIGHTS` 指定路径。
 5. **配置前端代理（可选）**：
    - 开发模式下，前端会自动尝试连接 `http://127.0.0.1:8000/analyze`，无需额外配置即可访问本机 FastAPI 服务。
    - 若后端部署在其他地址，请在环境变量中设置 `ANALYZE_API_URL`（或 `AI_BACKEND_URL` / `NEXT_PUBLIC_ANALYZE_API_URL`），支持填写完整地址或基础域名（会自动补全 `/analyze` 路径）。
