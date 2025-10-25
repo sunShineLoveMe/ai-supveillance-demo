@@ -66,7 +66,9 @@ styles/
    - 若未配置或后端异常，前端会自动返回模拟数据，便于无后端情况下的演示。
 
 ### 现金检测权重与阈值调优
-- 默认模型：`keremberke/yolov8n-banknote`，可通过环境变量 `YOLO_WEIGHTS` 指向自定义的 YOLOv8 权重文件或仓库标识。
+- 默认模型：首次启动会自动尝试将 Hugging Face 上的 `keremberke/yolov8n-banknote` 权重下载到 `backend/models/yolov8n-banknote.pt`。
+- 自定义路径：通过环境变量 `YOLO_WEIGHTS` 指定本地 `.pt` 文件或目录（会自动追加默认文件名）。
+- 自定义远程地址：如需从内部制品库下载，可设置 `YOLO_REMOTE_WEIGHTS_URL` 为可访问的权重链接。
 - 样本采样：可通过 `MAX_SAMPLED_FRAMES` 与 `FRAME_SAMPLE_INTERVAL_SECONDS` 控制关键帧数量和采样间隔。
 - 现金判定：
   - `CASH_KEYWORDS`：指定与现金相关的类别关键字，仅命中这些标签时才生成关键帧。

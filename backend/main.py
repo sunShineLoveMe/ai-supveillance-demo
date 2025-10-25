@@ -12,13 +12,21 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from ultralytics import YOLO
+from ultralytics.utils.downloads import download
 
 APP_TITLE = "AI Smart Counter Monitor Backend"
 APP_VERSION = "1.0.0"
 
 MAX_SAMPLED_FRAMES = int(os.getenv("MAX_SAMPLED_FRAMES", "24"))
 FRAME_SAMPLE_INTERVAL_SECONDS = float(os.getenv("FRAME_SAMPLE_INTERVAL_SECONDS", "0.5"))
-YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "keremberke/yolov8n-banknote")
+DEFAULT_WEIGHTS_NAME = "yolov8n-banknote.pt"
+DEFAULT_REMOTE_WEIGHTS = "https://huggingface.co/keremberke/yolov8n-banknote/resolve/main/yolov8n-banknote.pt"
+
+YOLO_WEIGHTS_PATH = os.getenv(
+    "YOLO_WEIGHTS",
+    str((Path(__file__).parent / "models" / DEFAULT_WEIGHTS_NAME).resolve()),
+)
+YOLO_REMOTE_WEIGHTS_URL = os.getenv("YOLO_REMOTE_WEIGHTS_URL", DEFAULT_REMOTE_WEIGHTS)
 CONFIDENCE_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.35"))
 CASH_KEYWORDS = {kw.strip().lower() for kw in os.getenv(
     "CASH_KEYWORDS",
@@ -33,11 +41,47 @@ CONTEXT_CENTER_DISTANCE = float(os.getenv("CASH_CONTEXT_CENTER_DISTANCE", "0.18"
 
 
 def _load_model() -> YOLO:
-    weights_path = Path(YOLO_WEIGHTS_PATH)
-    if not weights_path.exists():
-        # allow ultralytics to download default weights automatically
-        return YOLO(YOLO_WEIGHTS_PATH)
+    weights_path = _ensure_weights()
     return YOLO(str(weights_path))
+
+
+def _ensure_weights() -> Path:
+    """Ensure YOLO weights exist locally, downloading from a remote source if required."""
+
+    weights_path = Path(YOLO_WEIGHTS_PATH)
+
+    if weights_path.is_dir():
+        weights_path = weights_path / DEFAULT_WEIGHTS_NAME
+
+    if weights_path.exists():
+        return weights_path
+
+    weights_path.parent.mkdir(parents=True, exist_ok=True)
+
+    remote_url = YOLO_REMOTE_WEIGHTS_URL.strip()
+    if not remote_url:
+        raise FileNotFoundError(
+            f"未找到 YOLO 模型权重文件：{weights_path}. 请通过 YOLO_WEIGHTS 或 YOLO_REMOTE_WEIGHTS_URL 指定有效路径。"
+        )
+
+    downloaded = download(remote_url, dir=str(weights_path.parent), unzip=False, delete=False)
+
+    if isinstance(downloaded, (list, tuple)):
+        candidates = [Path(path) for path in downloaded]
+    else:
+        candidates = [Path(str(downloaded))]
+
+    for candidate in candidates:
+        if candidate.exists():
+            if candidate.resolve() == weights_path.resolve():
+                return weights_path
+            if candidate.suffix == ".pt":
+                candidate.rename(weights_path)
+                return weights_path
+
+    raise FileNotFoundError(
+        f"无法从 {remote_url} 下载 YOLO 权重到 {weights_path}. 请检查网络或手动放置模型文件。"
+    )
 
 
 model: YOLO | None = None
