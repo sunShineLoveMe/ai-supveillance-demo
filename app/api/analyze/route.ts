@@ -3,7 +3,43 @@ import { NextResponse } from "next/server"
 const ANALYZE_BACKEND_ENDPOINT =
   process.env.ANALYZE_API_URL || process.env.AI_BACKEND_URL || process.env.NEXT_PUBLIC_ANALYZE_API_URL
 
-const fallbackPayload = {
+const DEFAULT_ANALYZE_BACKEND_ENDPOINT = "http://127.0.0.1:8000/analyze"
+
+const normalizeEndpoint = (endpoint: string): string => {
+  if (!endpoint) return endpoint
+
+  try {
+    const parsed = new URL(endpoint)
+    if (parsed.pathname === "/" || parsed.pathname === "") {
+      parsed.pathname = "/analyze"
+      return parsed.toString()
+    }
+    if (parsed.pathname.endsWith("/")) {
+      const trimmedPath = parsed.pathname.replace(/\/+$/, "")
+      parsed.pathname = trimmedPath.endsWith("/analyze") ? trimmedPath : `${trimmedPath}/analyze`
+      return parsed.toString()
+    }
+    return endpoint
+  } catch {
+    const trimmed = endpoint.replace(/\/+$/, "")
+    return trimmed.endsWith("/analyze") ? trimmed : `${trimmed}/analyze`
+  }
+}
+
+const resolveAnalyzeEndpoint = (): string | undefined => {
+  const trimmed = ANALYZE_BACKEND_ENDPOINT?.trim()
+  if (trimmed) {
+    return normalizeEndpoint(trimmed)
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return DEFAULT_ANALYZE_BACKEND_ENDPOINT
+  }
+
+  return undefined
+}
+
+const createFallbackPayload = () => ({
   cash_transaction: true,
   cash_confidence: 0.93,
   internal_employee: true,
@@ -38,7 +74,7 @@ const fallbackPayload = {
     sample_interval_frames: 12,
     generated_at: new Date().toISOString(),
   },
-}
+})
 
 export async function POST(request: Request) {
   try {
@@ -49,28 +85,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing video file" }, { status: 400 })
     }
 
-    if (!ANALYZE_BACKEND_ENDPOINT) {
-      return NextResponse.json(fallbackPayload)
+    const endpoint = resolveAnalyzeEndpoint()
+    if (!endpoint) {
+      console.warn("ANALYZE_API_URL is not configured; falling back to mock data")
+      return NextResponse.json(createFallbackPayload())
     }
 
     const forwardFormData = new FormData()
     const blob = file as Blob & { name?: string }
     forwardFormData.append("file", blob, blob.name ?? "upload.mp4")
 
-    const response = await fetch(ANALYZE_BACKEND_ENDPOINT, {
+    const response = await fetch(endpoint, {
       method: "POST",
       body: forwardFormData,
+      headers: {
+        Accept: "application/json",
+      },
     })
 
     if (!response.ok) {
       console.error("AI analyze backend responded with", response.status, response.statusText)
-      return NextResponse.json(fallbackPayload, { status: 200 })
+      return NextResponse.json(createFallbackPayload(), { status: 200 })
     }
 
     const result = await response.json()
     return NextResponse.json(result)
   } catch (error) {
     console.error("AI analyze proxy failed", error)
-    return NextResponse.json(fallbackPayload, { status: 200 })
+    return NextResponse.json(createFallbackPayload(), { status: 200 })
   }
 }

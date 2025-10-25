@@ -61,7 +61,8 @@ styles/
    uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 5. **配置前端代理（可选）**：
-   - 在环境变量中配置 `ANALYZE_API_URL`（或 `AI_BACKEND_URL` / `NEXT_PUBLIC_ANALYZE_API_URL`）指向 FastAPI 推理接口。
+   - 开发模式下，前端会自动尝试连接 `http://127.0.0.1:8000/analyze`，无需额外配置即可访问本机 FastAPI 服务。
+   - 若后端部署在其他地址，请在环境变量中设置 `ANALYZE_API_URL`（或 `AI_BACKEND_URL` / `NEXT_PUBLIC_ANALYZE_API_URL`），支持填写完整地址或基础域名（会自动补全 `/analyze` 路径）。
    - 若未配置或后端异常，前端会自动返回模拟数据，便于无后端情况下的演示。
 
 ## 使用流程
