@@ -497,18 +497,25 @@ export default function Page() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [results, setResults] = useState<AnalysisResponse | null>(null)
   const [rawJson, setRawJson] = useState("")
-  const [logs, setLogs] = useState<LogEntry[]>(() => {
-    const initialEntries: LogEntryPayload[] = [
-      { kind: "system", key: "boot" },
-      { kind: "system", key: "cashModule" },
-      { kind: "system", key: "faceModule" },
-      { kind: "system", key: "behaviorModule" },
-      { kind: "system", key: "objectModule" },
-    ]
-    return initialEntries.map((entry) => createLogEntry(entry))
-  })
+  const [logs, setLogs] = useState<LogEntry[]>([])
 
   useEffect(() => {
+    setLogs((prev) => {
+      if (prev.length > 0) {
+        return prev
+      }
+
+      const initialEntries: LogEntryPayload[] = [
+        { kind: "system", key: "boot" },
+        { kind: "system", key: "cashModule" },
+        { kind: "system", key: "faceModule" },
+        { kind: "system", key: "behaviorModule" },
+        { kind: "system", key: "objectModule" },
+      ]
+
+      return initialEntries.map((entry) => createLogEntry(entry))
+    })
+
     return () => {
       if (videoUrl) {
         URL.revokeObjectURL(videoUrl)
