@@ -46,11 +46,26 @@ CONTEXT_CENTER_DISTANCE = float(os.getenv("CASH_CONTEXT_CENTER_DISTANCE", "0.18"
 
 
 def _load_model() -> YOLO:
+    """Load the YOLO model, attempting a one-time redownload if the weights are corrupted."""
+
     weights_path = _ensure_weights()
-    return YOLO(str(weights_path))
+    try:
+        return YOLO(str(weights_path))
+    except Exception as load_error:
+        if not _should_attempt_redownload(load_error):
+            raise
+
+        # Remove the suspect weights file and force a fresh download before retrying once.
+        try:
+            weights_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        refreshed_path = _ensure_weights(force_download=True)
+        return YOLO(str(refreshed_path))
 
 
-def _ensure_weights() -> Path:
+def _ensure_weights(force_download: bool = False) -> Path:
     """Ensure YOLO weights exist locally, downloading from a remote source if required."""
 
     weights_path = Path(YOLO_WEIGHTS_PATH)
@@ -58,7 +73,7 @@ def _ensure_weights() -> Path:
     if weights_path.is_dir():
         weights_path = weights_path / DEFAULT_WEIGHTS_NAME
 
-    if weights_path.exists():
+    if weights_path.exists() and not force_download:
         return weights_path
 
     weights_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +85,7 @@ def _ensure_weights() -> Path:
         )
 
     try:
-        downloaded_path = _download_weights(remote_url, weights_path)
+        downloaded_path = _download_weights(remote_url, weights_path, force_download=force_download)
     except Exception as download_error:  # pragma: no cover - network errors bubble up with context
         raise FileNotFoundError(
             f"无法从 {remote_url} 下载 YOLO 权重到 {weights_path}. 请检查网络或手动放置模型文件。"
@@ -89,11 +104,11 @@ def _ensure_weights() -> Path:
     return weights_path
 
 
-def _download_weights(remote_url: str, weights_path: Path) -> Path:
+def _download_weights(remote_url: str, weights_path: Path, *, force_download: bool = False) -> Path:
     """Download YOLO weights handling Hugging Face repositories explicitly."""
 
     if "huggingface.co" in remote_url:
-        hf_path = _download_from_huggingface(remote_url, weights_path.parent)
+        hf_path = _download_from_huggingface(remote_url, weights_path.parent, force_download=force_download)
         if hf_path is not None:
             return hf_path
 
@@ -111,7 +126,7 @@ def _download_weights(remote_url: str, weights_path: Path) -> Path:
     raise FileNotFoundError(f"未能识别有效的模型文件：{remote_url}")
 
 
-def _download_from_huggingface(remote_url: str, target_dir: Path) -> Path | None:
+def _download_from_huggingface(remote_url: str, target_dir: Path, *, force_download: bool = False) -> Path | None:
     if hf_hub_download is None:
         return None
 
@@ -137,11 +152,18 @@ def _download_from_huggingface(remote_url: str, target_dir: Path) -> Path | None
             revision=revision,
             local_dir=str(target_dir),
             local_dir_use_symlinks=False,
+            force_download=force_download,
+            resume_download=not force_download,
         )
     except Exception:
         return None
 
     return Path(local_file)
+
+
+def _should_attempt_redownload(error: Exception) -> bool:
+    message = str(error).lower()
+    return "pickle data was truncated" in message or "invalid load key" in message
 
 
 model: YOLO | None = None
