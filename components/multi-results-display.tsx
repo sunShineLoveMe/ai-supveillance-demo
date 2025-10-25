@@ -1,201 +1,180 @@
 "use client"
 
-import { Card } from "@/components/ui/card"
+import { ResultCard, type ResultCardStatusVariant } from "@/components/result-card"
 import { Progress } from "@/components/ui/progress"
-import { DollarSign, User, Activity, Package, CheckCircle2, AlertTriangle, XCircle } from "lucide-react"
+import { DollarSign, User, Activity, Package } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { AnalysisResults } from "@/app/page"
 
-interface MultiResultsDisplayProps {
-  results: AnalysisResults
+import type { AnalysisResponse } from "@/app/page"
+
+type ResultsCopy = {
+  heading: string
+  cash: {
+    title: string
+    progressLabel: string
+    statuses: {
+      highRisk: string
+      detected: string
+      clear: string
+    }
+    details: {
+      detected: string
+      clear: string
+    }
+  }
+  face: {
+    title: string
+    progressLabel: string
+    statuses: {
+      employee: string
+      visitor: string
+    }
+    identityLabel: (name?: string) => string
+  }
+  behavior: {
+    title: string
+    badgeLabel: (count: number) => string
+    confidenceLabel: string
+    empty: string
+  }
+  objects: {
+    title: string
+    badgeLabel: (count: number) => string
+    empty: string
+    confidenceLabel: string
+  }
 }
 
-export function MultiResultsDisplay({ results }: MultiResultsDisplayProps) {
-  const hasAlert = results.cashDetection.detected && results.faceRecognition.isEmployee
+interface MultiResultsDisplayProps {
+  results: AnalysisResponse
+  copy: ResultsCopy
+  shouldAlert: boolean
+}
+
+export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResultsDisplayProps) {
+  const cashStatusVariant: ResultCardStatusVariant = results.cash_transaction
+    ? shouldAlert
+      ? "danger"
+      : "warning"
+    : "success"
+  const cashStatusLabel = results.cash_transaction
+    ? shouldAlert
+      ? copy.cash.statuses.highRisk
+      : copy.cash.statuses.detected
+    : copy.cash.statuses.clear
+
+  const behaviorConfidence = typeof results.behavior_confidence === "number"
+    ? results.behavior_confidence
+    : results.actions.length > 0
+    ? 0.72
+    : 0.35
+
+  const objectConfidence = typeof results.object_confidence === "number"
+    ? results.object_confidence
+    : results.objects.length > 0
+    ? 0.68
+    : 0.3
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      {/* Cash Detection */}
-      <Card
-        className={cn(
-          "border-2 p-6 transition-all",
-          results.cashDetection.detected ? "border-warning/50 bg-warning/10" : "border-success/50 bg-success/10",
-        )}
+      <ResultCard
+        icon={DollarSign}
+        title={copy.cash.title}
+        status={{ label: cashStatusLabel, variant: cashStatusVariant }}
+        animate={shouldAlert && results.cash_transaction}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn("rounded-lg p-2", results.cashDetection.detected ? "bg-warning/20" : "bg-success/20")}>
-              <DollarSign className={cn("h-6 w-6", results.cashDetection.detected ? "text-warning" : "text-success")} />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">现金交易检测</h3>
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{copy.cash.progressLabel}</span>
+            <span className="font-mono text-sm text-foreground">{(results.cash_confidence * 100).toFixed(1)}%</span>
           </div>
-          {results.cashDetection.detected ? (
-            <AlertTriangle className="h-5 w-5 text-warning" />
-          ) : (
-            <CheckCircle2 className="h-5 w-5 text-success" />
-          )}
+          <Progress value={results.cash_confidence * 100} className="h-2" />
         </div>
+        <p className="text-sm text-muted-foreground">
+          {results.cash_transaction ? copy.cash.details.detected : copy.cash.details.clear}
+        </p>
+      </ResultCard>
 
-        <div className="mb-4">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">检测概率</span>
-            <span className="font-mono font-semibold text-foreground">
-              {(results.cashDetection.probability * 100).toFixed(1)}%
-            </span>
-          </div>
-          <Progress value={results.cashDetection.probability * 100} className="h-2" />
-        </div>
-
-        <div
-          className={cn(
-            "rounded-md border px-3 py-2 text-center text-sm font-semibold",
-            results.cashDetection.detected ? "border-warning/50 text-warning" : "border-success/50 text-success",
-          )}
-        >
-          {results.cashDetection.detected ? "⚠️ 检测到现金交易" : "✅ 未检测到现金"}
-        </div>
-      </Card>
-
-      {/* Face Recognition */}
-      <Card
-        className={cn(
-          "border-2 p-6 transition-all",
-          results.faceRecognition.isEmployee
-            ? hasAlert
-              ? "border-destructive/50 bg-destructive/10"
-              : "border-primary/50 bg-primary/10"
-            : "border-muted/50 bg-muted/10",
-        )}
+      <ResultCard
+        icon={User}
+        title={copy.face.title}
+        status={{
+          label: results.internal_employee ? copy.face.statuses.employee : copy.face.statuses.visitor,
+          variant: results.internal_employee ? (shouldAlert ? "danger" : "info") : "neutral",
+        }}
+        animate={shouldAlert && results.internal_employee}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                "rounded-lg p-2",
-                results.faceRecognition.isEmployee ? (hasAlert ? "bg-destructive/20" : "bg-primary/20") : "bg-muted/20",
-              )}
-            >
-              <User
-                className={cn(
-                  "h-6 w-6",
-                  results.faceRecognition.isEmployee
-                    ? hasAlert
-                      ? "text-destructive"
-                      : "text-primary"
-                    : "text-muted-foreground",
-                )}
-              />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">员工人脸识别</h3>
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{copy.face.progressLabel}</span>
+            <span className="font-mono text-sm text-foreground">{(results.face_similarity * 100).toFixed(1)}%</span>
           </div>
-          {results.faceRecognition.isEmployee ? (
-            hasAlert ? (
-              <AlertTriangle className="h-5 w-5 animate-pulse-glow text-destructive" />
-            ) : (
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-            )
-          ) : (
-            <XCircle className="h-5 w-5 text-muted-foreground" />
-          )}
+          <Progress value={results.face_similarity * 100} className="h-2" />
         </div>
-
-        <div className="mb-4">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">匹配度</span>
-            <span className="font-mono font-semibold text-foreground">
-              {(results.faceRecognition.similarity * 100).toFixed(1)}%
-            </span>
-          </div>
-          <Progress value={results.faceRecognition.similarity * 100} className="h-2" />
+        <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-sm font-medium text-foreground">
+          {copy.face.identityLabel(results.employee_name)}
         </div>
+      </ResultCard>
 
-        <div
-          className={cn(
-            "rounded-md border px-3 py-2 text-center text-sm font-semibold",
-            results.faceRecognition.isEmployee
-              ? hasAlert
-                ? "border-destructive/50 text-destructive"
-                : "border-primary/50 text-primary"
-              : "border-muted/50 text-muted-foreground",
-          )}
-        >
-          {results.faceRecognition.isEmployee ? `👤 内部员工: ${results.faceRecognition.employeeName}` : "👥 非员工"}
-        </div>
-      </Card>
-
-      {/* Behavior Analysis */}
-      <Card
-        className={cn(
-          "border-2 p-6 transition-all",
-          results.behaviorAnalysis.suspicious ? "border-warning/50 bg-warning/10" : "border-success/50 bg-success/10",
-        )}
+      <ResultCard
+        icon={Activity}
+        title={copy.behavior.title}
+        status={{
+          label: copy.behavior.badgeLabel(results.actions.length),
+          variant: (results.actions.length ? "info" : "neutral") as ResultCardStatusVariant,
+        }}
+        animate={shouldAlert && results.actions.length > 0}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className={cn("rounded-lg p-2", results.behaviorAnalysis.suspicious ? "bg-warning/20" : "bg-success/20")}
-            >
-              <Activity
-                className={cn("h-6 w-6", results.behaviorAnalysis.suspicious ? "text-warning" : "text-success")}
-              />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">行为分析</h3>
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{copy.behavior.confidenceLabel}</span>
+            <span className="font-mono text-sm text-foreground">{(behaviorConfidence * 100).toFixed(1)}%</span>
           </div>
-          {results.behaviorAnalysis.suspicious ? (
-            <AlertTriangle className="h-5 w-5 text-warning" />
-          ) : (
-            <CheckCircle2 className="h-5 w-5 text-success" />
-          )}
+          <Progress value={behaviorConfidence * 100} className="h-2" />
         </div>
-
-        <div className="mb-4">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">置信度</span>
-            <span className="font-mono font-semibold text-foreground">
-              {(results.behaviorAnalysis.confidence * 100).toFixed(1)}%
-            </span>
-          </div>
-          <Progress value={results.behaviorAnalysis.confidence * 100} className="h-2" />
-        </div>
-
         <div className="space-y-2">
-          {results.behaviorAnalysis.behaviors.map((behavior, index) => (
-            <div key={index} className="rounded-md bg-background/50 px-3 py-2 text-sm text-foreground">
-              • {behavior}
+          {results.actions.length ? (
+            results.actions.map((action, index) => (
+              <div key={`${action}-${index}`} className="rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-sm">
+                • {action}
+              </div>
+            ))
+          ) : (
+            <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+              {copy.behavior.empty}
             </div>
-          ))}
+          )}
         </div>
-      </Card>
+      </ResultCard>
 
-      {/* Object Detection */}
-      <Card className="border-2 border-primary/30 bg-card p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/20 p-2">
-              <Package className="h-6 w-6 text-primary" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground">物体检测</h3>
+      <ResultCard
+        icon={Package}
+        title={copy.objects.title}
+        status={{
+          label: copy.objects.badgeLabel(results.objects.length),
+          variant: (results.objects.length ? "info" : "neutral") as ResultCardStatusVariant,
+        }}
+        animate={shouldAlert && results.objects.length > 0}
+      >
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{copy.objects.confidenceLabel}</span>
+            <span className="font-mono text-sm text-foreground">{(objectConfidence * 100).toFixed(1)}%</span>
           </div>
-          <CheckCircle2 className="h-5 w-5 text-primary" />
+          <Progress value={objectConfidence * 100} className="h-2" />
         </div>
-
-        <div className="mb-4">
-          <div className="mb-2 text-sm text-muted-foreground">检测到的物体</div>
+        {results.objects.length ? (
           <div className="flex flex-wrap gap-2">
-            {results.objectDetection.objects.map((obj, index) => (
-              <span key={index} className="rounded-full bg-primary/20 px-3 py-1 text-sm font-medium text-primary">
-                {obj}
-              </span>
+            {results.objects.map((obj, index) => (
+              <span key={`${obj}-${index}`} className={cn("rounded-full px-3 py-1 text-xs font-semibold", shouldAlert ? "bg-destructive/10 text-destructive" : "bg-primary/20 text-primary")}>{obj}</span>
             ))}
           </div>
-        </div>
-
-        {results.objectDetection.cashCount > 0 && (
-          <div className="rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-center text-sm font-semibold text-warning">
-            💵 检测到 {results.objectDetection.cashCount} 处现金
+        ) : (
+          <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+            {copy.objects.empty}
           </div>
         )}
-      </Card>
+      </ResultCard>
     </div>
   )
 }

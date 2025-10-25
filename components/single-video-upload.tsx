@@ -1,11 +1,22 @@
 "use client"
 
 import type React from "react"
+import { useRef, useState } from "react"
 
-import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Upload, Video, Loader2, Play } from "lucide-react"
+import { Upload, Loader2, Play, FileVideo } from "lucide-react"
+
+type UploadCopy = {
+  sectionTitle: string
+  sectionDescription: string
+  emptyPlaceholder: string
+  uploadButton: string
+  reuploadButton: string
+  analyzeButton: string
+  analyzingLabel: string
+  dropHint: string
+}
 
 interface SingleVideoUploadProps {
   videoUrl: string | null
@@ -13,10 +24,12 @@ interface SingleVideoUploadProps {
   onFileUpload: (file: File) => void
   onAnalyze: () => void
   hasVideo: boolean
+  copy: UploadCopy
 }
 
-export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze, hasVideo }: SingleVideoUploadProps) {
+export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze, hasVideo, copy }: SingleVideoUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -25,49 +38,89 @@ export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze
     }
   }
 
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDragging(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file && file.type.startsWith("video/")) {
+      onFileUpload(file)
+    }
+  }
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    if (!isDragging) {
+      setIsDragging(true)
+    }
+  }
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDragging(false)
+  }
+
   return (
-    <Card className="overflow-hidden border-2 border-primary/30 bg-card p-8">
-      <div className="mb-6 text-center">
-        <h2 className="mb-2 text-2xl font-bold text-foreground">视频上传区域</h2>
-        <p className="text-sm text-muted-foreground">上传视频后，系统将自动进行四种AI分析</p>
+    <Card className="overflow-hidden border-2 border-primary/30 bg-card/60 p-6">
+      <div className="mb-6 flex flex-col gap-2 text-center">
+        <h2 className="text-2xl font-bold text-foreground">{copy.sectionTitle}</h2>
+        <p className="text-sm text-muted-foreground">{copy.sectionDescription}</p>
       </div>
 
-      {/* Video Preview */}
-      <div className="mb-6 aspect-video overflow-hidden rounded-lg bg-secondary">
+      <div
+        className={`mb-6 flex aspect-video flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all ${
+          isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
+        }`}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        role="presentation"
+      >
         {videoUrl ? (
-          <video src={videoUrl} className="h-full w-full object-cover" controls />
+          <video src={videoUrl} className="h-full w-full object-cover" controls playsInline />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-4">
-            <Video className="h-20 w-20 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">暂无视频</p>
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
+            <FileVideo className="h-12 w-12" />
+            <div className="text-sm font-medium">{copy.emptyPlaceholder}</div>
+            <p className="text-xs opacity-80">{copy.dropHint}</p>
           </div>
         )}
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-4">
-        <input ref={fileInputRef} type="file" accept="video/*" onChange={handleFileChange} className="hidden" />
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/*"
+          onChange={handleFileChange}
+          className="hidden"
+        />
         <Button
           variant="outline"
           size="lg"
-          className="flex-1 bg-transparent"
+          className="flex-1 border-primary/40 bg-background/80"
           onClick={() => fileInputRef.current?.click()}
           disabled={analyzing}
         >
           <Upload className="mr-2 h-5 w-5" />
-          {hasVideo ? "重新上传视频" : "上传视频"}
+          {hasVideo ? copy.reuploadButton : copy.uploadButton}
         </Button>
 
-        <Button size="lg" className="flex-1" onClick={onAnalyze} disabled={!hasVideo || analyzing}>
+        <Button
+          size="lg"
+          className="flex-1 bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
+          onClick={onAnalyze}
+          disabled={!hasVideo || analyzing}
+        >
           {analyzing ? (
             <>
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              AI 分析中...
+              {copy.analyzingLabel}
             </>
           ) : (
             <>
               <Play className="mr-2 h-5 w-5" />
-              开始 AI 分析
+              {copy.analyzeButton}
             </>
           )}
         </Button>
