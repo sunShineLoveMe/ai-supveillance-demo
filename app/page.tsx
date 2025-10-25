@@ -145,6 +145,10 @@ type ResultsCopy = {
     keyframesTitle: string
     keyframesEmpty: string
     detectionsLabel: string
+    viewLargerLabel: string
+    dialogTitle: string
+    dialogTimestampLabel: string
+    dialogFrameLabel: string
   }
   face: {
     title: string
@@ -253,6 +257,10 @@ const translations: Record<Language, TranslationBundle> = {
         keyframesTitle: "疑似现金关键帧",
         keyframesEmpty: "暂无关键帧截图",
         detectionsLabel: "检测标签",
+        viewLargerLabel: "点击放大查看",
+        dialogTitle: "关键帧详情",
+        dialogTimestampLabel: "时间戳",
+        dialogFrameLabel: "帧编号",
       },
       face: {
         title: "员工人脸识别",
@@ -348,6 +356,10 @@ const translations: Record<Language, TranslationBundle> = {
         keyframesTitle: "Cash Key Frames",
         keyframesEmpty: "No key frames captured",
         detectionsLabel: "Detections",
+        viewLargerLabel: "View larger",
+        dialogTitle: "Key Frame Details",
+        dialogTimestampLabel: "Timestamp",
+        dialogFrameLabel: "Frame",
       },
       face: {
         title: "Employee Face Recognition",

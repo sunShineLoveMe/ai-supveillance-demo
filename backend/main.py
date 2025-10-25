@@ -22,7 +22,7 @@ YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "yolov8n.pt")
 CONFIDENCE_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.3"))
 CASH_KEYWORDS = {kw.strip().lower() for kw in os.getenv(
     "CASH_KEYWORDS",
-    "cash,money,banknote,banknotes,bank note,bill,currency,handbag,purse,hand,mobile,card,document",
+    "cash,money,banknote,banknotes,bank note,bill,currency,handbag,purse,hand,mobile,card,document,wallet,envelope,paper,packet,pack,cell phone,phone",
 ).split(",")}
 
 
@@ -147,7 +147,15 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     "box": [x1, y1, x2, y2],
                 }
             )
-            color = (0, 0, 255) if lower_label in {"person", "hand"} else (0, 255, 0)
+            highlight_as_cash = is_cash_like or lower_label in {
+                "banknote",
+                "banknotes",
+                "bank note",
+                "bill",
+                "cash",
+                "currency",
+            }
+            color = (0, 0, 255) if (is_cash_like or highlight_as_cash or lower_label in {"person", "hand"}) else (0, 255, 0)
             cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
             text = f"{label} {confidence:.2f}"
             cv2.putText(
