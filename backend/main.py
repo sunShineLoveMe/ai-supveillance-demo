@@ -18,12 +18,18 @@ APP_VERSION = "1.0.0"
 
 MAX_SAMPLED_FRAMES = int(os.getenv("MAX_SAMPLED_FRAMES", "24"))
 FRAME_SAMPLE_INTERVAL_SECONDS = float(os.getenv("FRAME_SAMPLE_INTERVAL_SECONDS", "0.5"))
-YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "yolov8n.pt")
-CONFIDENCE_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.3"))
+YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "keremberke/yolov8n-banknote")
+CONFIDENCE_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.35"))
 CASH_KEYWORDS = {kw.strip().lower() for kw in os.getenv(
     "CASH_KEYWORDS",
-    "cash,money,banknote,banknotes,bank note,bill,currency,handbag,purse,hand,mobile,card,document,wallet,envelope,paper,packet,pack,cell phone,phone",
-).split(",")}
+    "cash,money,banknote,bank note,banknotes,bill,bills,currency,coin,coins,renminbi,rmb,yuan,cny,red packet,red envelope,bank card,bank-card,bankcard,credit card,debit card,wallet,purse,handbag,envelope",
+).split(",") if kw.strip()}
+CONTEXT_LABELS = {kw.strip().lower() for kw in os.getenv(
+    "CASH_CONTEXT_LABELS",
+    "person,hand,arm,handbag,wallet,purse",
+).split(",") if kw.strip()}
+CONTEXT_IOU_THRESHOLD = float(os.getenv("CASH_CONTEXT_IOU_THRESHOLD", "0.05"))
+CONTEXT_CENTER_DISTANCE = float(os.getenv("CASH_CONTEXT_CENTER_DISTANCE", "0.18"))
 
 
 def _load_model() -> YOLO:
@@ -125,51 +131,51 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         results = model.predict(frame_rgb, verbose=False)[0]
 
         detections = []
-        annotated_frame = frame.copy()
+        cash_detections: List[Dict[str, Any]] = []
+        context_detections: List[Dict[str, Any]] = []
 
         for box in results.boxes:
             cls_id = int(box.cls)
             confidence = float(box.conf)
             label = class_names.get(cls_id, str(cls_id))
-            collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
-
             lower_label = label.lower()
-            is_cash_like = any(keyword in lower_label for keyword in CASH_KEYWORDS)
-            if not is_cash_like and lower_label not in {"person", "hand"}:
-                continue
+            collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
 
             coords = box.xyxy[0].detach().cpu().tolist()  # type: ignore[union-attr]
             x1, y1, x2, y2 = map(int, coords)
-            detections.append(
-                {
-                    "label": label,
-                    "confidence": round(confidence, 4),
-                    "box": [x1, y1, x2, y2],
-                }
-            )
-            highlight_as_cash = is_cash_like or lower_label in {
-                "banknote",
-                "banknotes",
-                "bank note",
-                "bill",
-                "cash",
-                "currency",
+            detection_record = {
+                "label": label,
+                "confidence": round(confidence, 4),
+                "box": [x1, y1, x2, y2],
             }
-            color = (0, 0, 255) if (is_cash_like or highlight_as_cash or lower_label in {"person", "hand"}) else (0, 255, 0)
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-            text = f"{label} {confidence:.2f}"
-            cv2.putText(
-                annotated_frame,
-                text,
-                (x1, max(y1 - 10, 0)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                2,
-            )
-            highest_cash_conf = max(highest_cash_conf, confidence)
 
-        if detections:
+            is_cash_like = any(keyword in lower_label for keyword in CASH_KEYWORDS)
+            if is_cash_like:
+                detection_record["category"] = "cash"
+                cash_detections.append(detection_record)
+                highest_cash_conf = max(highest_cash_conf, confidence)
+            elif lower_label in CONTEXT_LABELS:
+                detection_record["category"] = "context"
+                context_detections.append(detection_record)
+
+        if cash_detections:
+            height, width = frame.shape[:2]
+            frame_diag = float((height ** 2 + width ** 2) ** 0.5) or 1.0
+            related_context = [
+                ctx
+                for ctx in context_detections
+                if _is_context_relevant(ctx["box"], cash_detections, frame_diag)
+            ]
+
+            annotated_frame = frame.copy()
+            for det in cash_detections:
+                _draw_box(annotated_frame, det, (0, 0, 255))
+            for det in related_context:
+                _draw_box(annotated_frame, det, (255, 165, 0))
+
+            detections.extend(cash_detections)
+            detections.extend(related_context)
+
             _, buffer = cv2.imencode(".jpg", annotated_frame)
             frame_b64 = base64.b64encode(buffer).decode("utf-8")
             timestamp_ms = int((frame_index / fps) * 1000) if fps else 0
@@ -230,6 +236,65 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         response["cash_confidence"] = max(response["cash_confidence"], 0.92)
 
     return response
+
+
+def _draw_box(image: Any, detection: Dict[str, Any], color: tuple[int, int, int]) -> None:
+    x1, y1, x2, y2 = detection["box"]
+    cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+    text = f"{detection['label']} {detection['confidence']:.2f}"
+    cv2.putText(
+        image,
+        text,
+        (x1, max(y1 - 10, 0)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        color,
+        2,
+    )
+
+
+def _is_context_relevant(box: List[int], cash_detections: List[Dict[str, Any]], frame_diag: float) -> bool:
+    for cash in cash_detections:
+        cash_box = cash["box"]
+        if _box_iou(box, cash_box) >= CONTEXT_IOU_THRESHOLD:
+            return True
+        if _center_distance_ratio(box, cash_box, frame_diag) <= CONTEXT_CENTER_DISTANCE:
+            return True
+    return False
+
+
+def _box_iou(box_a: List[int], box_b: List[int]) -> float:
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+
+    inter_area = max(0, inter_x2 - inter_x1) * max(0, inter_y2 - inter_y1)
+    if inter_area <= 0:
+        return 0.0
+
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+    union_area = area_a + area_b - inter_area
+    if union_area <= 0:
+        return 0.0
+    return inter_area / union_area
+
+
+def _center_distance_ratio(box_a: List[int], box_b: List[int], frame_diag: float) -> float:
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    a_cx = (ax1 + ax2) / 2.0
+    a_cy = (ay1 + ay2) / 2.0
+    b_cx = (bx1 + bx2) / 2.0
+    b_cy = (by1 + by2) / 2.0
+
+    distance = ((a_cx - b_cx) ** 2 + (a_cy - b_cy) ** 2) ** 0.5
+    return distance / frame_diag
 
 
 def _derive_actions(cash_detected: bool, keyframe_count: int) -> List[str]:

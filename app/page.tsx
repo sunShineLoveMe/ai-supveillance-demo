@@ -19,6 +19,7 @@ export type CashKeyframe = {
     label: string
     confidence: number
     box: number[]
+    category?: "cash" | "context"
   }[]
 }
 
@@ -449,7 +450,7 @@ function createFallbackAnalysis(): AnalysisResponse {
         mime_type: "image/png",
         image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
         detections: [
-          { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72] },
+          { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72], category: "cash" },
         ],
       },
     ],

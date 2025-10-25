@@ -131,7 +131,12 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
             <div className="grid gap-3 sm:grid-cols-2">
               {keyframes.map((frame) => {
                 const detectionSummary = frame.detections.length
-                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                  ? frame.detections
+                      .map((det) => {
+                        const prefix = det.category === "cash" ? "💴 " : det.category === "context" ? "🤝 " : ""
+                        return `${prefix}${det.label} ${(det.confidence * 100).toFixed(0)}%`
+                      })
+                      .join(" / ")
                   : "—"
                 return (
                   <figure
@@ -286,11 +291,20 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
                         className="rounded-md border border-border/40 bg-background/70 px-3 py-2"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">{det.label}</span>
+                          <span className="font-medium text-foreground">
+                            {det.category === "cash" && <span className="mr-1 text-destructive">●</span>}
+                            {det.category === "context" && <span className="mr-1 text-primary">●</span>}
+                            {det.label}
+                          </span>
                           <span className="font-mono text-xs text-muted-foreground">
                             {(det.confidence * 100).toFixed(1)}%
                           </span>
                         </div>
+                        {det.category && (
+                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            {det.category === "cash" ? "现金 · Cash" : "上下文 · Context"}
+                          </div>
+                        )}
                         <div className="mt-1 text-[11px] text-muted-foreground">
                           box: [{det.box.join(", ")}]
                         </div>
