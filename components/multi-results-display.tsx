@@ -21,6 +21,9 @@ type ResultsCopy = {
       detected: string
       clear: string
     }
+    keyframesTitle: string
+    keyframesEmpty: string
+    detectionsLabel: string
   }
   face: {
     title: string
@@ -51,7 +54,15 @@ interface MultiResultsDisplayProps {
   shouldAlert: boolean
 }
 
+function formatTimestamp(timestampMs: number) {
+  const totalSeconds = Math.max(0, Math.floor(timestampMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+}
+
 export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResultsDisplayProps) {
+  const keyframes = results.cash_keyframes ?? []
   const cashStatusVariant: ResultCardStatusVariant = results.cash_transaction
     ? shouldAlert
       ? "danger"
@@ -93,6 +104,40 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         <p className="text-sm text-muted-foreground">
           {results.cash_transaction ? copy.cash.details.detected : copy.cash.details.clear}
         </p>
+        <div className="mt-4 space-y-2">
+          <h4 className="text-sm font-semibold text-foreground">{copy.cash.keyframesTitle}</h4>
+          {keyframes.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {keyframes.map((frame) => {
+                const detectionSummary = frame.detections.length
+                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                  : "—"
+                return (
+                  <figure
+                    key={`${frame.frame_index}-${frame.timestamp_ms}`}
+                    className="overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
+                  >
+                    <img
+                      src={`data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`}
+                      alt={`Cash detection frame ${frame.frame_index}`}
+                      className="h-auto w-full object-cover"
+                    />
+                    <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
+                      <div className="font-medium text-foreground">
+                        {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
+                      </div>
+                      <div className="text-muted-foreground">
+                        <span className="font-semibold text-foreground">{copy.cash.detectionsLabel}:</span> {detectionSummary}
+                      </div>
+                    </figcaption>
+                  </figure>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{copy.cash.keyframesEmpty}</p>
+          )}
+        </div>
       </ResultCard>
 
       <ResultCard

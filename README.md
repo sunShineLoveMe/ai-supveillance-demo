@@ -9,6 +9,7 @@ AI 智能柜台监控 Demo 系统是一个基于 **Next.js + Tailwind CSS + Radi
 - [Radix UI](https://www.radix-ui.com/) + [ShadCN UI 组件库](https://ui.shadcn.com/)
 - [Lucide Icons](https://lucide.dev/) 图标
 - Next.js API Route 代理后端 FastAPI 服务
+- [FastAPI](https://fastapi.tiangolo.com/) + [YOLOv8n](https://docs.ultralytics.com/models/yolov8/) 现金检测推理后端
 
 ## 目录结构
 ```
@@ -22,6 +23,9 @@ components/
   single-video-upload.tsx     # 拖拽/上传视频组件
   system-log.tsx              # 可折叠系统日志，展示原始 JSON 和事件时间线
   ui/                         # ShadCN UI 组件集合
+backend/
+  main.py                     # FastAPI + YOLOv8n 推理服务
+  requirements.txt            # Python 依赖列表
 public/
 styles/
 ```
@@ -34,6 +38,7 @@ styles/
   - 员工人脸识别：显示匹配度与匹配员工信息。
   - 行为分析：列表化展示检测到的行为，并提供置信度条。
   - 物体检测：展示识别到的目标标签与识别置信度。
+- 🖼️ **现金关键帧回放**：FastAPI + YOLOv8n 逐帧采样识别现金/手部接触，返回带有框选结果的关键帧缩略图，前端即时呈现。
 - 🚨 **智能告警**：当现金概率 ≥ 0.9 且员工相似度 ≥ 0.85 时，标题区与相关卡片触发红色闪烁动画，并弹出告警横幅。
 - 📝 **系统日志**：可折叠区域展示 AI 返回的原始 JSON 以及按时间排序的事件日志，支持中英文切换。
 - 🌐 **多语言支持**：所有界面文案支持中英文一键切换。
@@ -48,7 +53,14 @@ styles/
    pnpm dev
    ```
 3. **访问页面**：浏览器打开 `http://localhost:3000`。
-4. **配置后端代理（可选）**：
+4. **启动 YOLOv8n FastAPI 后端（推荐）**：
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows 使用 .venv\\Scripts\\activate
+   pip install -r backend/requirements.txt
+   uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+5. **配置前端代理（可选）**：
    - 在环境变量中配置 `ANALYZE_API_URL`（或 `AI_BACKEND_URL` / `NEXT_PUBLIC_ANALYZE_API_URL`）指向 FastAPI 推理接口。
    - 若未配置或后端异常，前端会自动返回模拟数据，便于无后端情况下的演示。
 
@@ -73,7 +85,26 @@ styles/
   "alert": true,
   "alert_message": "⚠️ 检测到内部员工现金交易",
   "behavior_confidence": 0.86,
-  "object_confidence": 0.90
+  "object_confidence": 0.90,
+  "cash_keyframes": [
+    {
+      "frame_index": 42,
+      "timestamp_ms": 5200,
+      "mime_type": "image/jpeg",
+      "image_base64": "...",
+      "detections": [
+        { "label": "Cash Bundle", "confidence": 0.93, "box": [12, 10, 88, 72] }
+      ]
+    }
+  ],
+  "frame_sampling": {
+    "fps": 24,
+    "total_frames": 480,
+    "duration_seconds": 20.0,
+    "processed_frames": 12,
+    "sample_interval_frames": 12,
+    "generated_at": "2025-03-01T12:00:00Z"
+  }
 }
 ```
 > 若字段缺失，前端会自动回退到默认值并仍可正常显示。
@@ -86,6 +117,7 @@ styles/
 - [x] 告警动画（标题区 & 卡片闪烁、横幅提示）
 - [x] 系统日志折叠面板（原始 JSON + 多语言时间线）
 - [x] 中英文界面切换
+- [x] FastAPI + YOLOv8n 现金检测推理、关键帧抓取与前端可视化
 
 ## 后续可扩展方向
 - 集成实时 WebSocket 推送以展示持续监控结果

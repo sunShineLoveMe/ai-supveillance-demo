@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronUp, Terminal } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-import type { Language, LogEntry } from "@/app/page"
+import type { FrameSamplingMeta, Language, LogEntry } from "@/app/page"
 
 interface SystemLogProps {
   logs: LogEntry[]
@@ -18,6 +18,17 @@ interface SystemLogProps {
   emptyLabel: string
   language: Language
   formatLogEntry: (entry: LogEntry) => string
+  frameSampling?: FrameSamplingMeta | null
+  samplingHeading: string
+  samplingEmptyLabel: string
+  samplingItems: {
+    fps: string
+    totalFrames: string
+    duration: string
+    processed: string
+    interval: string
+    generatedAt: string
+  }
 }
 
 export function SystemLog({
@@ -29,6 +40,10 @@ export function SystemLog({
   emptyLabel,
   language,
   formatLogEntry,
+  frameSampling,
+  samplingHeading,
+  samplingEmptyLabel,
+  samplingItems,
 }: SystemLogProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
@@ -45,9 +60,20 @@ export function SystemLog({
       }),
     [language],
   )
+  const numberFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      }),
+    [language],
+  )
 
   const orderedLogs = useMemo(() => [...logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), [logs])
   const hasJson = rawJson.trim().length > 0
+  const samplingData = frameSampling ?? null
+  const frameUnit = language === "zh" ? "帧" : "frames"
+  const durationUnit = language === "zh" ? "秒" : "s"
 
   return (
     <Card className="border-border bg-card shadow-sm">
@@ -63,7 +89,7 @@ export function SystemLog({
 
       <div className={cn("overflow-hidden transition-all", isExpanded ? "max-h-[520px]" : "max-h-0")}>
         <div className="border-t border-border bg-secondary/40 p-4">
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-3">
             <section>
               <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{rawJsonLabel}</h3>
               <div className="max-h-72 overflow-y-auto rounded-lg border border-border/60 bg-background/90 p-3 text-xs">
@@ -91,6 +117,44 @@ export function SystemLog({
                   </ul>
                 ) : (
                   <p className="text-muted-foreground/70">{emptyLabel}</p>
+                )}
+              </div>
+            </section>
+
+            <section>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{samplingHeading}</h3>
+              <div className="rounded-lg border border-border/60 bg-background/90 p-3 text-xs">
+                {samplingData ? (
+                  <dl className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{samplingItems.fps}</dt>
+                      <dd className="font-mono text-foreground">{numberFormatter.format(samplingData.fps)}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{samplingItems.totalFrames}</dt>
+                      <dd className="font-mono text-foreground">{numberFormatter.format(samplingData.total_frames)} {frameUnit}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{samplingItems.duration}</dt>
+                      <dd className="font-mono text-foreground">{numberFormatter.format(samplingData.duration_seconds)} {durationUnit}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{samplingItems.processed}</dt>
+                      <dd className="font-mono text-foreground">{numberFormatter.format(samplingData.processed_frames)} {frameUnit}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{samplingItems.interval}</dt>
+                      <dd className="font-mono text-foreground">{numberFormatter.format(samplingData.sample_interval_frames)} {frameUnit}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-muted-foreground">{samplingItems.generatedAt}</dt>
+                      <dd className="font-mono text-foreground">
+                        {dateFormatter.format(new Date(samplingData.generated_at))}
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-muted-foreground/70">{samplingEmptyLabel}</p>
                 )}
               </div>
             </section>

@@ -10,6 +10,27 @@ import { AlertTriangle, Languages } from "lucide-react"
 
 export type Language = "zh" | "en"
 
+export type CashKeyframe = {
+  frame_index: number
+  timestamp_ms: number
+  image_base64: string
+  mime_type?: string
+  detections: {
+    label: string
+    confidence: number
+    box: number[]
+  }[]
+}
+
+export type FrameSamplingMeta = {
+  fps: number
+  total_frames: number
+  duration_seconds: number
+  processed_frames: number
+  sample_interval_frames: number
+  generated_at: string
+}
+
 export type AnalysisResponse = {
   cash_transaction: boolean
   cash_confidence: number
@@ -22,6 +43,8 @@ export type AnalysisResponse = {
   alert_message?: string
   behavior_confidence?: number
   object_confidence?: number
+  cash_keyframes?: CashKeyframe[]
+  frame_sampling?: FrameSamplingMeta
 }
 
 type BaseLogMeta = {
@@ -119,6 +142,9 @@ type ResultsCopy = {
       detected: string
       clear: string
     }
+    keyframesTitle: string
+    keyframesEmpty: string
+    detectionsLabel: string
   }
   face: {
     title: string
@@ -148,6 +174,16 @@ type SystemLogCopy = {
   rawJsonLabel: string
   timelineLabel: string
   empty: string
+  samplingLabel: string
+  samplingEmpty: string
+  samplingItems: {
+    fps: string
+    totalFrames: string
+    duration: string
+    processed: string
+    interval: string
+    generatedAt: string
+  }
 }
 
 type LogMessageMap = {
@@ -214,6 +250,9 @@ const translations: Record<Language, TranslationBundle> = {
           detected: "系统检测到现金交易迹象，请立即核查相关业务流程。",
           clear: "当前未发现现金交易迹象。",
         },
+        keyframesTitle: "疑似现金关键帧",
+        keyframesEmpty: "暂无关键帧截图",
+        detectionsLabel: "检测标签",
       },
       face: {
         title: "员工人脸识别",
@@ -242,6 +281,16 @@ const translations: Record<Language, TranslationBundle> = {
       rawJsonLabel: "AI 返回原始 JSON",
       timelineLabel: "事件时间线",
       empty: "暂无日志记录",
+      samplingLabel: "帧采样统计",
+      samplingEmpty: "暂无帧采样数据",
+      samplingItems: {
+        fps: "采样帧率 (FPS)",
+        totalFrames: "视频总帧数",
+        duration: "视频时长",
+        processed: "参与分析的帧数",
+        interval: "采样间隔 (帧)",
+        generatedAt: "生成时间",
+      },
     },
     logs: {
       boot: "系统初始化完成",
@@ -296,6 +345,9 @@ const translations: Record<Language, TranslationBundle> = {
           detected: "Potential cash movement detected. Please verify the ongoing operation immediately.",
           clear: "No clear cash activity was detected.",
         },
+        keyframesTitle: "Cash Key Frames",
+        keyframesEmpty: "No key frames captured",
+        detectionsLabel: "Detections",
       },
       face: {
         title: "Employee Face Recognition",
@@ -324,6 +376,16 @@ const translations: Record<Language, TranslationBundle> = {
       rawJsonLabel: "Raw JSON from AI",
       timelineLabel: "Event timeline",
       empty: "No log entries yet",
+      samplingLabel: "Frame Sampling Metrics",
+      samplingEmpty: "No sampling data yet",
+      samplingItems: {
+        fps: "Sampling FPS",
+        totalFrames: "Total frames",
+        duration: "Duration",
+        processed: "Frames processed",
+        interval: "Sampling interval (frames)",
+        generatedAt: "Generated at",
+      },
     },
     logs: {
       boot: "System bootstrap completed",
@@ -367,6 +429,25 @@ const fallbackAnalysis: AnalysisResponse = {
   alert_message: "⚠️ 检测到内部员工现金交易",
   behavior_confidence: 0.86,
   object_confidence: 0.9,
+  cash_keyframes: [
+    {
+      frame_index: 42,
+      timestamp_ms: 5200,
+      mime_type: "image/png",
+      image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
+      detections: [
+        { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72] },
+      ],
+    },
+  ],
+  frame_sampling: {
+    fps: 25,
+    total_frames: 480,
+    duration_seconds: 19.2,
+    processed_frames: 12,
+    sample_interval_frames: 12,
+    generated_at: new Date().toISOString(),
+  },
 }
 
 function createLogEntry(entry: LogEntryPayload): LogEntry {
@@ -439,7 +520,7 @@ export default function Page() {
 
   const shouldAlert = useMemo(() => {
     if (!results) return false
-    return results.cash_confidence >= 0.9 && results.face_similarity >= 0.85
+    return Boolean(results.alert) || (results.cash_confidence >= 0.9 && results.face_similarity >= 0.85)
   }, [results])
 
   const handleFileUpload = (file: File) => {
@@ -588,6 +669,10 @@ export default function Page() {
           emptyLabel={ui.systemLog.empty}
           language={language}
           formatLogEntry={(entry) => formatLogEntry(entry, language)}
+          frameSampling={results?.frame_sampling ?? null}
+          samplingHeading={ui.systemLog.samplingLabel}
+          samplingEmptyLabel={ui.systemLog.samplingEmpty}
+          samplingItems={ui.systemLog.samplingItems}
         />
 
         <footer className="mt-12 border-t border-border pt-6 text-center text-sm text-muted-foreground">

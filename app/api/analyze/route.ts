@@ -15,6 +15,29 @@ const fallbackPayload = {
   alert_message: "⚠️ 检测到内部员工现金交易",
   behavior_confidence: 0.86,
   object_confidence: 0.9,
+  cash_keyframes: [
+    {
+      frame_index: 42,
+      timestamp_ms: 5200,
+      mime_type: "image/png",
+      image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
+      detections: [
+        {
+          label: "Cash Bundle",
+          confidence: 0.93,
+          box: [12, 10, 88, 72],
+        },
+      ],
+    },
+  ],
+  frame_sampling: {
+    fps: 25,
+    total_frames: 480,
+    duration_seconds: 19.2,
+    processed_frames: 12,
+    sample_interval_frames: 12,
+    generated_at: new Date().toISOString(),
+  },
 }
 
 export async function POST(request: Request) {
