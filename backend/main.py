@@ -155,7 +155,13 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                 "cash",
                 "currency",
             }
-            color = (0, 0, 255) if (is_cash_like or highlight_as_cash or lower_label in {"person", "hand"}) else (0, 255, 0)
+            if highlight_as_cash:
+                color = (0, 255, 255)
+                collected_objects["Cash / 现金"] = max(confidence, collected_objects.get("Cash / 现金", 0.0))
+            elif lower_label in {"person", "hand"}:
+                color = (0, 165, 255) if lower_label == "hand" else (255, 0, 0)
+            else:
+                color = (0, 255, 0)
             cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
             text = f"{label} {confidence:.2f}"
             cv2.putText(

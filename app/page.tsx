@@ -437,7 +437,7 @@ function createFallbackAnalysis(): AnalysisResponse {
     face_similarity: 0.88,
     employee_name: "张三",
     actions: ["频繁手部运动", "递交文件", "注视现金区域"],
-    objects: ["人物", "柜台", "现金", "文件夹"],
+    objects: ["Cash / 现金 (93%)", "Person / 人物 (90%)", "Counter / 柜台 (78%)", "Folder / 文件夹 (65%)"],
     alert: true,
     alert_message: "⚠️ 检测到内部员工现金交易",
     behavior_confidence: 0.86,
