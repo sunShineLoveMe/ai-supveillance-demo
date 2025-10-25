@@ -417,37 +417,39 @@ const translations: Record<Language, TranslationBundle> = {
   },
 }
 
-const fallbackAnalysis: AnalysisResponse = {
-  cash_transaction: true,
-  cash_confidence: 0.93,
-  internal_employee: true,
-  face_similarity: 0.88,
-  employee_name: "张三",
-  actions: ["频繁手部运动", "递交文件", "注视现金区域"],
-  objects: ["人物", "柜台", "现金", "文件夹"],
-  alert: true,
-  alert_message: "⚠️ 检测到内部员工现金交易",
-  behavior_confidence: 0.86,
-  object_confidence: 0.9,
-  cash_keyframes: [
-    {
-      frame_index: 42,
-      timestamp_ms: 5200,
-      mime_type: "image/png",
-      image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
-      detections: [
-        { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72] },
-      ],
+function createFallbackAnalysis(): AnalysisResponse {
+  return {
+    cash_transaction: true,
+    cash_confidence: 0.93,
+    internal_employee: true,
+    face_similarity: 0.88,
+    employee_name: "张三",
+    actions: ["频繁手部运动", "递交文件", "注视现金区域"],
+    objects: ["人物", "柜台", "现金", "文件夹"],
+    alert: true,
+    alert_message: "⚠️ 检测到内部员工现金交易",
+    behavior_confidence: 0.86,
+    object_confidence: 0.9,
+    cash_keyframes: [
+      {
+        frame_index: 42,
+        timestamp_ms: 5200,
+        mime_type: "image/png",
+        image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
+        detections: [
+          { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72] },
+        ],
+      },
+    ],
+    frame_sampling: {
+      fps: 25,
+      total_frames: 480,
+      duration_seconds: 19.2,
+      processed_frames: 12,
+      sample_interval_frames: 12,
+      generated_at: new Date().toISOString(),
     },
-  ],
-  frame_sampling: {
-    fps: 25,
-    total_frames: 480,
-    duration_seconds: 19.2,
-    processed_frames: 12,
-    sample_interval_frames: 12,
-    generated_at: new Date().toISOString(),
-  },
+  }
 }
 
 function createLogEntry(entry: LogEntryPayload): LogEntry {
@@ -586,7 +588,7 @@ export default function Page() {
         setLogs((prev) => [...prev, createLogEntry({ kind: "alert", message })])
       }
     } catch (error) {
-      const mock = fallbackAnalysis
+      const mock = createFallbackAnalysis()
       setResults(mock)
       setRawJson(JSON.stringify(mock, null, 2))
       const message = error instanceof Error ? error.message : "Unknown error"
