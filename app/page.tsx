@@ -575,7 +575,7 @@ export default function Page() {
         {results && (
           <div className="mb-8">
             <h2 className="mb-4 text-xl font-semibold text-foreground">{ui.results.heading}</h2>
-            <MultiResultsDisplay results={results} language={language} copy={ui.results} shouldAlert={shouldAlert} />
+            <MultiResultsDisplay results={results} copy={ui.results} shouldAlert={shouldAlert} />
           </div>
         )}
 
