@@ -24,8 +24,8 @@ YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "yolov8n.pt")
 CASH_CONFIDENCE_ALERT_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.3"))
 ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "currency-deteection-pq4mu/1")
 ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
-ROBOFLOW_CONFIDENCE = float(os.getenv("ROBOFLOW_CONFIDENCE", "0.25"))
-ROBOFLOW_IOU = float(os.getenv("ROBOFLOW_IOU", "0.3"))
+ROBOFLOW_CONFIDENCE = float(os.getenv("ROBOFLOW_CONFIDENCE", "0.08"))
+ROBOFLOW_IOU = float(os.getenv("ROBOFLOW_IOU", "0.1"))
 ROBOFLOW_CASH_PREFIX = os.getenv("ROBOFLOW_CASH_PREFIX", "chinese yuan").lower()
 
 
