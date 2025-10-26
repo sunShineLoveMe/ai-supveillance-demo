@@ -241,9 +241,24 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         </div>
         {results.objects.length ? (
           <div className="flex flex-wrap gap-2">
-            {results.objects.map((obj, index) => (
-              <span key={`${obj}-${index}`} className={cn("rounded-full px-3 py-1 text-xs font-semibold", shouldAlert ? "bg-destructive/10 text-destructive" : "bg-primary/20 text-primary")}>{obj}</span>
-            ))}
+            {results.objects.map((obj, index) => {
+              const isCashTag = /现金|cash/i.test(obj)
+              return (
+                <span
+                  key={`${obj}-${index}`}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold",
+                    isCashTag
+                      ? "border border-yellow-400/70 bg-yellow-500/20 text-yellow-700 shadow-sm"
+                      : shouldAlert
+                      ? "bg-destructive/10 text-destructive"
+                      : "bg-primary/20 text-primary",
+                  )}
+                >
+                  {obj}
+                </span>
+              )
+            })}
           </div>
         ) : (
           <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
