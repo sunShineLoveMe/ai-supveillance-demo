@@ -141,6 +141,12 @@ def _load_employee_gallery() -> None:
         if descriptors is None or keypoints is None:
             logger.warning("员工样本特征不足，跳过: %s", resolved_path)
             continue
+        logger.info(
+            "员工图库加载 | 姓名=%s | 特征点=%d | 描述子=%d",
+            entry.get("name") or resolved_path.stem,
+            len(keypoints),
+            len(descriptors),
+        )
         employee_profiles.append(
             {
                 "name": entry.get("name") or resolved_path.stem,
@@ -181,6 +187,14 @@ def _prepare_face_roi(
     y2 = min(y2, frame_height)
 
     if x2 <= x1 or y2 <= y1:
+        logger.info(
+            "员工比对调试 | 无效ROI | 坐标=(%d,%d,%d,%d) | 标签=%s",
+            x1,
+            y1,
+            x2,
+            y2,
+            label,
+        )
         return frame[0:0, 0:0]
 
     roi = frame[y1:y2, x1:x2]
@@ -192,6 +206,14 @@ def _prepare_face_roi(
         roi = frame[y1 : y1 + face_height, x1:x2]
 
     if roi.size == 0:
+        logger.info(
+            "员工比对调试 | ROI为空 | 坐标=(%d,%d,%d,%d) | 标签=%s",
+            x1,
+            y1,
+            x2,
+            y2,
+            label,
+        )
         return roi
 
     # Resize overly large crops to stabilise feature extraction while
@@ -222,13 +244,27 @@ def _compute_face_features(image: np.ndarray) -> Tuple[Any, Optional[np.ndarray]
     return keypoints, descriptors
 
 
-def _match_employee_face(face_bgr: np.ndarray) -> Tuple[Optional[str], float]:
-    if not employee_profiles or face_bgr is None or face_bgr.size == 0:
-        return None, 0.0
+def _match_employee_face(
+    face_bgr: np.ndarray,
+) -> Tuple[Optional[str], float, Dict[str, Any]]:
+    debug_payload: Dict[str, Any] = {
+        "roi_shape": tuple(face_bgr.shape) if face_bgr is not None else None,
+        "keypoints": 0,
+        "descriptor_count": 0,
+        "profiles": [],
+    }
 
-    _, descriptors = _compute_face_features(face_bgr)
+    if not employee_profiles or face_bgr is None or face_bgr.size == 0:
+        debug_payload["reason"] = "empty_roi_or_gallery"
+        return None, 0.0, debug_payload
+
+    keypoints, descriptors = _compute_face_features(face_bgr)
+    debug_payload["keypoints"] = len(keypoints or []) if keypoints is not None else 0
+    debug_payload["descriptor_count"] = 0 if descriptors is None else len(descriptors)
+
     if descriptors is None:
-        return None, 0.0
+        debug_payload["reason"] = "insufficient_descriptors"
+        return None, 0.0, debug_payload
 
     best_name: Optional[str] = None
     best_score = 0.0
@@ -238,20 +274,49 @@ def _match_employee_face(face_bgr: np.ndarray) -> Tuple[Optional[str], float]:
         try:
             matches = face_matcher.match(descriptors, stored_descriptors)
         except cv2.error:  # pragma: no cover - OpenCV matcher guard
+            debug_payload["profiles"].append(
+                {
+                    "name": profile.get("name"),
+                    "matches": 0,
+                    "good_matches": 0,
+                    "similarity": 0.0,
+                    "error": "matcher_error",
+                }
+            )
             continue
         if not matches:
+            debug_payload["profiles"].append(
+                {
+                    "name": profile.get("name"),
+                    "matches": 0,
+                    "good_matches": 0,
+                    "similarity": 0.0,
+                    "reason": "no_matches",
+                }
+            )
             continue
         good_matches = [m for m in matches if m.distance <= EMPLOYEE_DISTANCE_THRESHOLD]
-        if not good_matches:
-            continue
         sample_points = profile.get("keypoints", len(stored_descriptors)) or len(stored_descriptors)
         denominator = float(max(min(len(descriptors), sample_points), 1))
         similarity = len(good_matches) / denominator
+        debug_payload["profiles"].append(
+            {
+                "name": profile.get("name"),
+                "matches": len(matches),
+                "good_matches": len(good_matches),
+                "similarity": float(similarity),
+                "candidate_keypoints": sample_points,
+            }
+        )
+        if not good_matches:
+            continue
         if similarity > best_score:
             best_score = float(similarity)
             best_name = profile.get("name")
 
-    return best_name, best_score
+    debug_payload["best_name"] = best_name
+    debug_payload["best_similarity"] = best_score
+    return best_name, best_score, debug_payload
 
 
 @app.on_event("startup")
@@ -532,7 +597,41 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     2,
                 )
                 face_roi = _prepare_face_roi(frame, x1, y1, x2, y2, label)
-                match_name, similarity = _match_employee_face(face_roi)
+                match_name, similarity, match_debug = _match_employee_face(face_roi)
+                if match_debug:
+                    profile_summaries = match_debug.get("profiles", [])
+                    profile_summaries = sorted(
+                        profile_summaries,
+                        key=lambda item: item.get("similarity", 0.0),
+                        reverse=True,
+                    )
+                    top_profiles = "; ".join(
+                        [
+                            "{name}:sim={sim:.2f},good={good},total={total}".format(
+                                name=entry.get("name") or "未命名",
+                                sim=float(entry.get("similarity", 0.0)),
+                                good=int(entry.get("good_matches", 0)),
+                                total=int(entry.get("matches", 0)),
+                            )
+                            for entry in profile_summaries[:3]
+                        ]
+                    ) or "无候选"
+                    logger.info(
+                        "员工比对调试 | 帧=%d | ROI=%s | 关键点=%d | 描述子=%d | 最佳=%s(%.2f) | 候选=%s",
+                        frame_index,
+                        match_debug.get("roi_shape"),
+                        match_debug.get("keypoints", 0),
+                        match_debug.get("descriptor_count", 0),
+                        match_debug.get("best_name") or "无",
+                        match_debug.get("best_similarity", 0.0),
+                        top_profiles,
+                    )
+                    if match_debug.get("reason"):
+                        logger.info(
+                            "员工比对调试 | 帧=%d | 原因=%s",
+                            frame_index,
+                            match_debug.get("reason"),
+                        )
                 detection_payload: Dict[str, Any] = {
                     "label": label,
                     "confidence": round(confidence, 4),
