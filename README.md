@@ -9,7 +9,7 @@ AI 智能柜台监控 Demo 系统是一个基于 **Next.js + Tailwind CSS + Radi
 - [Radix UI](https://www.radix-ui.com/) + [ShadCN UI 组件库](https://ui.shadcn.com/)
 - [Lucide Icons](https://lucide.dev/) 图标
 - Next.js API Route 代理后端 FastAPI 服务
-- [FastAPI](https://fastapi.tiangolo.com/) + [YOLOv8n](https://docs.ultralytics.com/models/yolov8/) 现金检测推理后端
+- [FastAPI](https://fastapi.tiangolo.com/) + [Roboflow Inference](https://roboflow.com/) 现金检测推理后端（结合 YOLOv8n 辅助人脸/人员识别）
 
 ## 目录结构
 ```
@@ -24,7 +24,7 @@ components/
   system-log.tsx              # 可折叠系统日志，展示原始 JSON 和事件时间线
   ui/                         # ShadCN UI 组件集合
 backend/
-  main.py                     # FastAPI + YOLOv8n 推理服务
+  main.py                     # FastAPI 服务（Roboflow 现金检测 + YOLOv8n 人脸/人员识别）
   requirements.txt            # Python 依赖列表
 public/
 styles/
@@ -38,7 +38,7 @@ styles/
   - 员工人脸识别：显示匹配度与匹配员工信息。
   - 行为分析：列表化展示检测到的行为，并提供置信度条。
   - 物体检测：展示识别到的目标标签与识别置信度，并对现金相关标签以黄色圆角徽标强调。
-- 🖼️ **现金关键帧回放**：FastAPI + YOLOv8n 逐帧采样识别现金/手部接触，现金与相关目标均以黄色框突出显示，并可点击任意缩略图放大查看原图与检测详情。
+- 🖼️ **现金关键帧回放**：FastAPI 调用 Roboflow 现金交易微调模型逐帧识别人民币并以黄色框高亮，同时结合 YOLOv8n 抓取人员信息，可点击任意缩略图放大查看原图与检测详情。
 - 🚨 **智能告警**：当现金概率 ≥ 0.9 且员工相似度 ≥ 0.85 时，标题区与相关卡片触发红色闪烁动画，并弹出告警横幅。
 - 📝 **系统日志**：可折叠区域展示 AI 返回的原始 JSON 以及按时间排序的事件日志，支持中英文切换。
 - 🌐 **多语言支持**：所有界面文案支持中英文一键切换。
@@ -53,11 +53,13 @@ styles/
    pnpm dev
    ```
 3. **访问页面**：浏览器打开 `http://localhost:3000`。
-4. **启动 YOLOv8n FastAPI 后端（推荐）**：
+4. **配置后端推理环境（推荐）**：
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Windows 使用 .venv\\Scripts\\activate
    pip install -r backend/requirements.txt
+   export ROBOFLOW_API_KEY="<你的 Roboflow API Key>"
+   # 可选：export ROBOFLOW_MODEL_ID="currency-deteection-pq4mu/1"
    uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 5. **配置前端代理（可选）**：
@@ -118,7 +120,7 @@ styles/
 - [x] 告警动画（标题区 & 卡片闪烁、横幅提示）
 - [x] 系统日志折叠面板（原始 JSON + 多语言时间线）
 - [x] 中英文界面切换
-- [x] FastAPI + YOLOv8n 现金检测推理、关键帧抓取（现金目标黄色高亮框）与前端可视化（支持关键帧放大查看）
+- [x] FastAPI + Roboflow 现金检测推理（黄色高亮人民币）与 YOLOv8n 人员检测、关键帧抓取和前端可视化（支持关键帧放大查看）
 
 ## 后续可扩展方向
 - 集成实时 WebSocket 推送以展示持续监控结果

@@ -5,12 +5,13 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import cv2
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from inference import get_model
 from ultralytics import YOLO
 
 APP_TITLE = "AI Smart Counter Monitor Backend"
@@ -19,14 +20,15 @@ APP_VERSION = "1.0.0"
 MAX_SAMPLED_FRAMES = int(os.getenv("MAX_SAMPLED_FRAMES", "24"))
 FRAME_SAMPLE_INTERVAL_SECONDS = float(os.getenv("FRAME_SAMPLE_INTERVAL_SECONDS", "0.5"))
 YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "yolov8n.pt")
-CONFIDENCE_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.3"))
-CASH_KEYWORDS = {kw.strip().lower() for kw in os.getenv(
-    "CASH_KEYWORDS",
-    "cash,money,banknote,banknotes,bank note,bill,currency,handbag,purse,hand,mobile,card,document,wallet,envelope,paper,packet,pack,cell phone,phone",
-).split(",")}
+CASH_CONFIDENCE_ALERT_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.3"))
+ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "currency-deteection-pq4mu/1")
+ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
+ROBOFLOW_CONFIDENCE = float(os.getenv("ROBOFLOW_CONFIDENCE", "0.08"))
+ROBOFLOW_IOU = float(os.getenv("ROBOFLOW_IOU", "0.1"))
+ROBOFLOW_CASH_PREFIX = os.getenv("ROBOFLOW_CASH_PREFIX", "chinese yuan").lower()
 
 
-def _load_model() -> YOLO:
+def _load_yolo_model() -> YOLO:
     weights_path = Path(YOLO_WEIGHTS_PATH)
     if not weights_path.exists():
         # allow ultralytics to download default weights automatically
@@ -34,8 +36,17 @@ def _load_model() -> YOLO:
     return YOLO(str(weights_path))
 
 
-model: YOLO | None = None
-class_names: Dict[int, str] = {}
+def _load_cash_model():
+    if not ROBOFLOW_API_KEY:
+        raise RuntimeError("ROBOFLOW_API_KEY 环境变量未配置，无法加载现金检测模型")
+    return get_model(model_id=ROBOFLOW_MODEL_ID, api_key=ROBOFLOW_API_KEY)
+
+
+yolo_model: Optional[YOLO] = None
+yolo_class_names: Dict[int, str] = {}
+cash_model: Any | None = None
+cash_class_names: Dict[int, str] = {}
+cash_allowed_ids: List[int] = []
 
 
 app = FastAPI(title=APP_TITLE, version=APP_VERSION)
@@ -49,17 +60,30 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup_event() -> None:
-    global model, class_names
-    model = _load_model()
-    try:
-        class_names = model.model.names  # type: ignore[attr-defined]
-    except AttributeError:
-        class_names = model.names  # type: ignore[attr-defined]
+    global yolo_model, yolo_class_names, cash_model, cash_class_names, cash_allowed_ids
+
+    if yolo_model is None:
+        yolo_model = _load_yolo_model()
+        try:
+            yolo_class_names = yolo_model.model.names  # type: ignore[attr-defined]
+        except AttributeError:
+            yolo_class_names = yolo_model.names  # type: ignore[attr-defined]
+
+    if cash_model is None:
+        cash_model = _load_cash_model()
+        names = getattr(cash_model, "class_names", None) or {}
+        # roboflow inference models expose class names as a dict keyed by index
+        cash_class_names = {int(idx): name for idx, name in names.items()} if isinstance(names, dict) else {}
+        cash_allowed_ids = [
+            idx for idx, name in cash_class_names.items() if str(name).lower().startswith(ROBOFLOW_CASH_PREFIX)
+        ]
+        if not cash_allowed_ids and cash_class_names:
+            cash_allowed_ids = list(cash_class_names.keys())
 
 
 @app.post("/analyze")
 async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
-    if model is None:
+    if cash_model is None or yolo_model is None:
         startup_event()
 
     suffix = Path(file.filename or "upload.mp4").suffix or ".mp4"
@@ -93,7 +117,8 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
 
 
 def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
-    assert model is not None, "YOLO model is not initialized"
+    assert cash_model is not None, "现金检测模型未初始化"
+    assert yolo_model is not None, "YOLO 模型未初始化"
 
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -107,6 +132,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     sampled_frames: List[Dict[str, Any]] = []
     collected_objects: Dict[str, float] = {}
     highest_cash_conf = 0.0
+    highest_face_conf = 0.0
 
     frame_index = 0
     processed_frames = 0
@@ -121,25 +147,50 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
             continue
 
         processed_frames += 1
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = model.predict(frame_rgb, verbose=False)[0]
+        frame_height, frame_width = frame.shape[:2]
 
-        detections = []
+        try:
+            inference_results = cash_model.infer(
+                frame,
+                confidence=ROBOFLOW_CONFIDENCE,
+                iou_threshold=ROBOFLOW_IOU,
+            )[0]
+        except Exception as exc:  # pragma: no cover - defensive guard against API issues
+            capture.release()
+            raise RuntimeError("现金检测模型推理失败") from exc
+
+        if isinstance(inference_results, dict):
+            predictions = inference_results.get("predictions", [])
+        else:
+            predictions = getattr(inference_results, "predictions", [])
+        if not isinstance(predictions, list):
+            predictions = []
+        detections: List[Dict[str, Any]] = []
         annotated_frame = frame.copy()
+        frame_has_cash = False
 
-        for box in results.boxes:
-            cls_id = int(box.cls)
-            confidence = float(box.conf)
-            label = class_names.get(cls_id, str(cls_id))
-            collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
+        for pred in predictions:
+            try:
+                class_id = int(pred.get("class_id", -1))
+            except (TypeError, ValueError):
+                class_id = -1
 
-            lower_label = label.lower()
-            is_cash_like = any(keyword in lower_label for keyword in CASH_KEYWORDS)
-            if not is_cash_like and lower_label not in {"person", "hand"}:
+            label = cash_class_names.get(class_id, pred.get("class", str(class_id)))
+            confidence = float(pred.get("confidence", 0.0))
+
+            if cash_allowed_ids and class_id not in cash_allowed_ids:
                 continue
 
-            coords = box.xyxy[0].detach().cpu().tolist()  # type: ignore[union-attr]
-            x1, y1, x2, y2 = map(int, coords)
+            x_center = float(pred.get("x", 0.0))
+            y_center = float(pred.get("y", 0.0))
+            width = float(pred.get("width", 0.0))
+            height = float(pred.get("height", 0.0))
+
+            x1 = max(int(x_center - width / 2), 0)
+            y1 = max(int(y_center - height / 2), 0)
+            x2 = min(int(x_center + width / 2), frame_width - 1)
+            y2 = min(int(y_center + height / 2), frame_height - 1)
+
             detections.append(
                 {
                     "label": label,
@@ -147,35 +198,36 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     "box": [x1, y1, x2, y2],
                 }
             )
-            highlight_as_cash = is_cash_like or lower_label in {
-                "banknote",
-                "banknotes",
-                "bank note",
-                "bill",
-                "cash",
-                "currency",
-            }
-            if highlight_as_cash:
-                color = (0, 255, 255)
-                collected_objects["Cash / 现金"] = max(confidence, collected_objects.get("Cash / 现金", 0.0))
-            elif lower_label in {"person", "hand"}:
-                color = (0, 165, 255) if lower_label == "hand" else (255, 0, 0)
-            else:
-                color = (0, 255, 0)
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-            text = f"{label} {confidence:.2f}"
+
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
             cv2.putText(
                 annotated_frame,
-                text,
+                f"{label} {confidence:.2f}",
                 (x1, max(y1 - 10, 0)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                color,
+                (0, 255, 255),
                 2,
             )
-            highest_cash_conf = max(highest_cash_conf, confidence)
 
-        if detections:
+            highest_cash_conf = max(highest_cash_conf, confidence)
+            collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
+            collected_objects["Cash / 现金"] = max(confidence, collected_objects.get("Cash / 现金", 0.0))
+            frame_has_cash = True
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        yolo_results = yolo_model.predict(frame_rgb, verbose=False)[0]
+        for box in yolo_results.boxes:
+            cls_id = int(box.cls)
+            confidence = float(box.conf)
+            label = yolo_class_names.get(cls_id, str(cls_id))
+            lower_label = label.lower()
+            if lower_label in {"person", "face"}:
+                highest_face_conf = max(highest_face_conf, confidence)
+            if lower_label in {"person", "hand", "face"}:
+                collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
+
+        if frame_has_cash and detections:
             _, buffer = cv2.imencode(".jpg", annotated_frame)
             frame_b64 = base64.b64encode(buffer).decode("utf-8")
             timestamp_ms = int((frame_index / fps) * 1000) if fps else 0
@@ -201,9 +253,12 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     behavior_confidence = 0.6 + 0.2 * min(len(sampled_frames) / max(processed_frames or 1, 1), 1)
     object_confidence = objects_sorted[0][1] if objects_sorted else 0.4
 
-    base_cash_conf = highest_cash_conf or (0.15 if cash_detected else 0.05)
+    base_cash_conf = highest_cash_conf or (0.12 if cash_detected else 0.05)
     if cash_detected:
-        base_cash_conf = max(base_cash_conf, min(0.95, 0.6 + 0.4 * (highest_cash_conf or 0.5)))
+        base_cash_conf = max(base_cash_conf, min(0.98, 0.65 + 0.35 * (highest_cash_conf or 0.5)))
+
+    face_similarity = 0.35 + 0.6 * min(highest_face_conf, 1.0)
+    internal_employee = highest_face_conf >= 0.6
 
     response: Dict[str, Any] = {
         "cash_confidence": round(base_cash_conf, 4),
@@ -212,9 +267,9 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         "objects": top_objects,
         "behavior_confidence": round(min(behavior_confidence, 0.95), 4),
         "object_confidence": round(max(object_confidence, 0.35), 4),
-        "internal_employee": False,
-        "face_similarity": 0.41,
-        "employee_name": None,
+        "internal_employee": internal_employee,
+        "face_similarity": round(face_similarity, 4),
+        "employee_name": "待确认员工" if internal_employee else None,
         "alert": False,
         "alert_message": None,
         "frame_sampling": {
@@ -227,11 +282,11 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         },
     }
 
-    if cash_detected and highest_cash_conf >= CONFIDENCE_THRESHOLD:
+    if cash_detected and highest_cash_conf >= CASH_CONFIDENCE_ALERT_THRESHOLD:
         response["alert"] = True
         response["alert_message"] = "⚠️ 检测到疑似现金交易行为"
         response["internal_employee"] = True
-        response["face_similarity"] = 0.87
+        response["face_similarity"] = max(response["face_similarity"], 0.87)
         response["employee_name"] = "待确认员工"
         response["cash_confidence"] = max(response["cash_confidence"], 0.92)
 
