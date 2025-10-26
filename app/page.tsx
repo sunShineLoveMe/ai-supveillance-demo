@@ -599,7 +599,7 @@ export default function Page() {
 
   const shouldAlert = useMemo(() => {
     if (!results) return false
-    return Boolean(results.alert) || (results.cash_confidence >= 0.9 && results.face_similarity >= 0.85)
+    return results.cash_transaction && results.internal_employee
   }, [results])
 
   const handleFileUpload = (file: File) => {
@@ -653,7 +653,7 @@ export default function Page() {
         createLogEntry({ kind: "result-objects", objects: data.objects }),
       ])
 
-      if (data.alert || (data.cash_confidence >= 0.9 && data.face_similarity >= 0.85)) {
+      if (data.cash_transaction && data.internal_employee) {
         const message = data.alert_message ?? ui.alert.bannerTitle
         setLogs((prev) => [...prev, createLogEntry({ kind: "alert", message })])
       }
@@ -678,7 +678,7 @@ export default function Page() {
         createLogEntry({ kind: "result-objects", objects: mock.objects }),
       ])
 
-      if (mock.alert || (mock.cash_confidence >= 0.9 && mock.face_similarity >= 0.85)) {
+      if (mock.cash_transaction && mock.internal_employee) {
         const messageToUse = mock.alert_message ?? ui.alert.bannerTitle
         setLogs((prev) => [...prev, createLogEntry({ kind: "alert", message: messageToUse })])
       }
