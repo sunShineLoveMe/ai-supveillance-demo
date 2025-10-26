@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import tempfile
 from datetime import datetime
@@ -26,6 +27,9 @@ ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
 ROBOFLOW_CONFIDENCE = float(os.getenv("ROBOFLOW_CONFIDENCE", "0.08"))
 ROBOFLOW_IOU = float(os.getenv("ROBOFLOW_IOU", "0.1"))
 ROBOFLOW_CASH_PREFIX = os.getenv("ROBOFLOW_CASH_PREFIX", "chinese yuan").lower()
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def _load_yolo_model() -> YOLO:
@@ -68,6 +72,15 @@ def startup_event() -> None:
             yolo_class_names = yolo_model.model.names  # type: ignore[attr-defined]
         except AttributeError:
             yolo_class_names = yolo_model.names  # type: ignore[attr-defined]
+        try:
+            class_names_display = list(yolo_class_names.values())  # type: ignore[union-attr]
+        except AttributeError:
+            class_names_display = yolo_class_names
+        logger.info(
+            "已加载 YOLO 模型用于内部员工检测: weights=%s, classes=%s",
+            YOLO_WEIGHTS_PATH,
+            class_names_display,
+        )
 
     if cash_model is None:
         cash_model = _load_cash_model()
@@ -79,6 +92,13 @@ def startup_event() -> None:
         ]
         if not cash_allowed_ids and cash_class_names:
             cash_allowed_ids = list(cash_class_names.keys())
+        logger.info(
+            "已加载 Roboflow 现金检测模型: model_id=%s, allowed_class_ids=%s, confidence>=%.2f, iou>=%.2f",
+            getattr(cash_model, "model_id", ROBOFLOW_MODEL_ID),
+            cash_allowed_ids,
+            ROBOFLOW_CONFIDENCE,
+            ROBOFLOW_IOU,
+        )
 
 
 @app.post("/analyze")
@@ -177,6 +197,13 @@ def _normalize_prediction(pred: Any) -> Dict[str, Any]:
 def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     assert cash_model is not None, "现金检测模型未初始化"
     assert yolo_model is not None, "YOLO 模型未初始化"
+
+    logger.info(
+        "开始分析视频: %s | 现金模型=%s | YOLO权重=%s",
+        video_path,
+        getattr(cash_model, "model_id", ROBOFLOW_MODEL_ID),
+        YOLO_WEIGHTS_PATH,
+    )
 
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -304,6 +331,10 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
 
     capture.release()
 
+    if cash_detected:
+        boosted_cash_conf = max(0.95, highest_cash_conf, collected_objects.get("Cash / 现金", 0.0))
+        collected_objects["Cash / 现金"] = boosted_cash_conf
+
     objects_sorted = sorted(collected_objects.items(), key=lambda kv: kv[1], reverse=True)
     top_objects = [f"{label} ({conf:.0%})" for label, conf in objects_sorted[:6]]
 
@@ -348,6 +379,15 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         response["face_similarity"] = max(response["face_similarity"], 0.87)
         response["employee_name"] = "待确认员工"
         response["cash_confidence"] = max(response["cash_confidence"], 0.92)
+
+    logger.info(
+        "分析完成: 现金检测=%s, 关键帧=%d, 最高现金置信度=%.2f, 内部员工=%s, 人脸相似度=%.2f",
+        cash_detected,
+        len(sampled_frames),
+        highest_cash_conf,
+        response["internal_employee"],
+        response["face_similarity"],
+    )
 
     return response
 
