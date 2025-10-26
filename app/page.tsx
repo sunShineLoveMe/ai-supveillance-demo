@@ -10,16 +10,23 @@ import { AlertTriangle, Languages } from "lucide-react"
 
 export type Language = "zh" | "en"
 
+export type MatchSummary = {
+  name?: string | null
+  similarity: number
+}
+
 export type CashKeyframe = {
   frame_index: number
   timestamp_ms: number
-  image_base64: string
+  image_base64?: string
   mime_type?: string
   detections: {
     label: string
     confidence: number
     box: number[]
+    match?: MatchSummary
   }[]
+  match?: MatchSummary
 }
 
 export type FrameSamplingMeta = {
@@ -37,6 +44,7 @@ export type AnalysisResponse = {
   internal_employee: boolean
   face_similarity: number
   employee_name?: string
+  employee_match_score?: number
   actions: string[]
   objects: string[]
   alert?: boolean
@@ -44,6 +52,7 @@ export type AnalysisResponse = {
   behavior_confidence?: number
   object_confidence?: number
   cash_keyframes?: CashKeyframe[]
+  employee_keyframes?: CashKeyframe[]
   frame_sampling?: FrameSamplingMeta
 }
 
@@ -144,6 +153,7 @@ type ResultsCopy = {
     }
     keyframesTitle: string
     keyframesEmpty: string
+    previewUnavailable: string
     detectionsLabel: string
     viewLargerLabel: string
     dialogTitle: string
@@ -157,7 +167,18 @@ type ResultsCopy = {
       employee: string
       visitor: string
     }
-    identityLabel: (name?: string) => string
+    identityLabel: (matched: boolean, name?: string | null) => string
+    matchSummaryLabel: string
+    matchUnknownLabel: string
+    dialogMatchLabel: string
+    keyframesTitle: string
+    keyframesEmpty: string
+    previewUnavailable: string
+    detectionsLabel: string
+    viewLargerLabel: string
+    dialogTitle: string
+    dialogTimestampLabel: string
+    dialogFrameLabel: string
   }
   behavior: {
     title: string
@@ -227,21 +248,21 @@ type TranslationBundle = {
 
 const translations: Record<Language, TranslationBundle> = {
   zh: {
-    title: "AI 智能柜台监控 Demo 系统",
-    subtitle: "上传视频后，AI 自动分析四种检测结果",
+    title: "柜台现金交易监控告警系统（模拟）",
+    subtitle: "上传视频后，系统自动分析现金交易行为轨迹",
     languageToggle: "English",
     upload: {
       sectionTitle: "视频上传区",
-      sectionDescription: "上传视频后，系统将自动调用四种检测模型进行分析",
+      sectionDescription: "上传视频后，系统将自动调用现金检测模型进行分析",
       emptyPlaceholder: "暂无视频",
       uploadButton: "上传视频",
       reuploadButton: "重新上传视频",
-      analyzeButton: "开始 AI 分析",
-      analyzingLabel: "AI 分析中...",
+      analyzeButton: "模型分析",
+      analyzingLabel: "分析中...",
       dropHint: ".mp4 · .mov · 拖拽或点击下方按钮上传",
     },
     results: {
-      heading: "AI 分析结果（四种检测）",
+      heading: "模型分析结果",
       cash: {
         title: "现金交易检测",
         progressLabel: "现金概率",
@@ -256,6 +277,7 @@ const translations: Record<Language, TranslationBundle> = {
         },
         keyframesTitle: "疑似现金关键帧",
         keyframesEmpty: "暂无关键帧截图",
+        previewUnavailable: "暂无预览",
         detectionsLabel: "检测标签",
         viewLargerLabel: "点击放大查看",
         dialogTitle: "关键帧详情",
@@ -269,7 +291,19 @@ const translations: Record<Language, TranslationBundle> = {
           employee: "识别为内部员工",
           visitor: "识别为访客",
         },
-        identityLabel: (name?: string) => `匹配员工：${name ?? "未知"}`,
+        identityLabel: (matched: boolean, name?: string | null) =>
+          matched ? `匹配员工：${name ?? "未知"}` : "未匹配到内部员工",
+        matchSummaryLabel: "匹配结果",
+        matchUnknownLabel: "未匹配到样本",
+        dialogMatchLabel: "匹配结果",
+        keyframesTitle: "疑似员工关键帧",
+        keyframesEmpty: "暂无员工关键帧截图",
+        previewUnavailable: "暂无预览",
+        detectionsLabel: "检测标签",
+        viewLargerLabel: "点击放大查看",
+        dialogTitle: "人脸关键帧详情",
+        dialogTimestampLabel: "时间戳",
+        dialogFrameLabel: "帧编号",
       },
       behavior: {
         title: "行为分析",
@@ -355,6 +389,7 @@ const translations: Record<Language, TranslationBundle> = {
         },
         keyframesTitle: "Cash Key Frames",
         keyframesEmpty: "No key frames captured",
+        previewUnavailable: "No preview available",
         detectionsLabel: "Detections",
         viewLargerLabel: "View larger",
         dialogTitle: "Key Frame Details",
@@ -368,7 +403,19 @@ const translations: Record<Language, TranslationBundle> = {
           employee: "Identified as internal staff",
           visitor: "Identified as visitor",
         },
-        identityLabel: (name?: string) => `Matched staff: ${name ?? "Unknown"}`,
+        identityLabel: (matched: boolean, name?: string | null) =>
+          matched ? `Matched staff: ${name ?? "Unknown"}` : "No internal staff matched",
+        matchSummaryLabel: "Match result",
+        matchUnknownLabel: "No registry match",
+        dialogMatchLabel: "Match result",
+        keyframesTitle: "Employee Key Frames",
+        keyframesEmpty: "No employee key frames",
+        previewUnavailable: "No preview available",
+        detectionsLabel: "Detections",
+        viewLargerLabel: "View larger",
+        dialogTitle: "Face Key Frame Details",
+        dialogTimestampLabel: "Timestamp",
+        dialogFrameLabel: "Frame",
       },
       behavior: {
         title: "Behavior Analysis",
@@ -436,8 +483,9 @@ function createFallbackAnalysis(): AnalysisResponse {
     internal_employee: true,
     face_similarity: 0.88,
     employee_name: "张三",
+    employee_match_score: 0.66,
     actions: ["频繁手部运动", "递交文件", "注视现金区域"],
-    objects: ["人物", "柜台", "现金", "文件夹"],
+    objects: ["Cash / 现金 (93%)", "Person / 人物 (90%)", "Counter / 柜台 (78%)", "Folder / 文件夹 (65%)"],
     alert: true,
     alert_message: "⚠️ 检测到内部员工现金交易",
     behavior_confidence: 0.86,
@@ -447,9 +495,19 @@ function createFallbackAnalysis(): AnalysisResponse {
         frame_index: 42,
         timestamp_ms: 5200,
         mime_type: "image/png",
-        image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
         detections: [
           { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72] },
+        ],
+      },
+    ],
+    employee_keyframes: [
+      {
+        frame_index: 40,
+        timestamp_ms: 5000,
+        mime_type: "image/png",
+        match: { name: "张三", similarity: 0.66 },
+        detections: [
+          { label: "Person", confidence: 0.88, box: [22, 18, 84, 96], match: { name: "张三", similarity: 0.66 } },
         ],
       },
     ],

@@ -25,3 +25,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local employee gallery assets (users should manage images locally)
+backend/employee_gallery/*
+!backend/employee_gallery/README.md
+!backend/employee_gallery/registry.json

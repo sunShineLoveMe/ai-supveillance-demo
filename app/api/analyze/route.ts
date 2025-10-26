@@ -45,8 +45,9 @@ const createFallbackPayload = () => ({
   internal_employee: true,
   face_similarity: 0.88,
   employee_name: "张三",
+  employee_match_score: 0.66,
   actions: ["频繁手部运动", "递交文件", "注视现金区域"],
-  objects: ["人物", "柜台", "现金", "文件夹"],
+  objects: ["Cash / 现金 (93%)", "Person / 人物 (90%)", "Counter / 柜台 (78%)", "Folder / 文件夹 (65%)"],
   alert: true,
   alert_message: "⚠️ 检测到内部员工现金交易",
   behavior_confidence: 0.86,
@@ -56,12 +57,27 @@ const createFallbackPayload = () => ({
       frame_index: 42,
       timestamp_ms: 5200,
       mime_type: "image/png",
-      image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
       detections: [
         {
           label: "Cash Bundle",
           confidence: 0.93,
           box: [12, 10, 88, 72],
+        },
+      ],
+    },
+  ],
+  employee_keyframes: [
+    {
+      frame_index: 40,
+      timestamp_ms: 5000,
+      mime_type: "image/png",
+      match: { name: "张三", similarity: 0.66 },
+      detections: [
+        {
+          label: "Person",
+          confidence: 0.88,
+          box: [22, 18, 84, 96],
+          match: { name: "张三", similarity: 0.66 },
         },
       ],
     },
