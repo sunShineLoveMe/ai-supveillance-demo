@@ -130,6 +130,7 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
         "behavior_confidence": analysis["behavior_confidence"],
         "object_confidence": analysis["object_confidence"],
         "cash_keyframes": analysis["cash_keyframes"],
+        "employee_keyframes": analysis["employee_keyframes"],
         "frame_sampling": analysis["frame_sampling"],
     }
 
@@ -215,6 +216,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
 
     frame_interval = max(int(fps * FRAME_SAMPLE_INTERVAL_SECONDS), 1)
     sampled_frames: List[Dict[str, Any]] = []
+    employee_keyframes: List[Dict[str, Any]] = []
     collected_objects: Dict[str, float] = {}
     highest_cash_conf = 0.0
     highest_face_conf = 0.0
@@ -254,7 +256,10 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
             predictions = []
         detections: List[Dict[str, Any]] = []
         annotated_frame = frame.copy()
+        face_annotated_frame = frame.copy()
         frame_has_cash = False
+        frame_has_employee = False
+        face_detections: List[Dict[str, Any]] = []
 
         for pred in predictions:
             pred_data = _normalize_prediction(pred)
@@ -312,6 +317,30 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
             lower_label = label.lower()
             if lower_label in {"person", "face"}:
                 highest_face_conf = max(highest_face_conf, confidence)
+                x1, y1, x2, y2 = [
+                    max(int(coord), 0)
+                    for coord in box.xyxy[0].tolist()  # type: ignore[union-attr]
+                ]
+                x2 = min(x2, frame_width - 1)
+                y2 = min(y2, frame_height - 1)
+                cv2.rectangle(face_annotated_frame, (x1, y1), (x2, y2), (66, 135, 245), 2)
+                cv2.putText(
+                    face_annotated_frame,
+                    f"{label} {confidence:.2f}",
+                    (x1, max(y1 - 10, 0)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (66, 135, 245),
+                    2,
+                )
+                face_detections.append(
+                    {
+                        "label": label,
+                        "confidence": round(confidence, 4),
+                        "box": [x1, y1, x2, y2],
+                    }
+                )
+                frame_has_employee = True
             if lower_label in {"person", "hand", "face"}:
                 collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
 
@@ -329,6 +358,20 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                 }
             )
             cash_detected = True
+
+        if frame_has_employee and face_detections:
+            _, face_buffer = cv2.imencode(".jpg", face_annotated_frame)
+            face_frame_b64 = base64.b64encode(face_buffer).decode("utf-8")
+            timestamp_ms = int((frame_index / fps) * 1000) if fps else 0
+            employee_keyframes.append(
+                {
+                    "frame_index": frame_index,
+                    "timestamp_ms": timestamp_ms,
+                    "mime_type": "image/jpeg",
+                    "image_base64": face_frame_b64,
+                    "detections": face_detections,
+                }
+            )
 
         frame_index += 1
 
@@ -356,6 +399,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     response: Dict[str, Any] = {
         "cash_confidence": round(base_cash_conf, 4),
         "cash_keyframes": sampled_frames,
+        "employee_keyframes": employee_keyframes,
         "actions": _derive_actions(cash_detected, len(sampled_frames)),
         "objects": top_objects,
         "behavior_confidence": round(min(behavior_confidence, 0.95), 4),
@@ -384,9 +428,10 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         response["cash_confidence"] = max(response["cash_confidence"], 0.92)
 
     logger.info(
-        "分析完成: 现金检测=%s, 关键帧=%d, 最高现金置信度=%.2f, 内部员工=%s, 人脸相似度=%.2f",
+        "分析完成: 现金检测=%s, 现金关键帧=%d, 员工关键帧=%d, 最高现金置信度=%.2f, 内部员工=%s, 人脸相似度=%.2f",
         cash_detected,
         len(sampled_frames),
+        len(employee_keyframes),
         highest_cash_conf,
         response["internal_employee"],
         response["face_similarity"],

@@ -44,6 +44,7 @@ export type AnalysisResponse = {
   behavior_confidence?: number
   object_confidence?: number
   cash_keyframes?: CashKeyframe[]
+  employee_keyframes?: CashKeyframe[]
   frame_sampling?: FrameSamplingMeta
 }
 
@@ -158,6 +159,13 @@ type ResultsCopy = {
       visitor: string
     }
     identityLabel: (name?: string) => string
+    keyframesTitle: string
+    keyframesEmpty: string
+    detectionsLabel: string
+    viewLargerLabel: string
+    dialogTitle: string
+    dialogTimestampLabel: string
+    dialogFrameLabel: string
   }
   behavior: {
     title: string
@@ -270,6 +278,13 @@ const translations: Record<Language, TranslationBundle> = {
           visitor: "识别为访客",
         },
         identityLabel: (name?: string) => `匹配员工：${name ?? "未知"}`,
+        keyframesTitle: "疑似员工关键帧",
+        keyframesEmpty: "暂无员工关键帧截图",
+        detectionsLabel: "检测标签",
+        viewLargerLabel: "点击放大查看",
+        dialogTitle: "人脸关键帧详情",
+        dialogTimestampLabel: "时间戳",
+        dialogFrameLabel: "帧编号",
       },
       behavior: {
         title: "行为分析",
@@ -369,6 +384,13 @@ const translations: Record<Language, TranslationBundle> = {
           visitor: "Identified as visitor",
         },
         identityLabel: (name?: string) => `Matched staff: ${name ?? "Unknown"}`,
+        keyframesTitle: "Employee Key Frames",
+        keyframesEmpty: "No employee key frames",
+        detectionsLabel: "Detections",
+        viewLargerLabel: "View larger",
+        dialogTitle: "Face Key Frame Details",
+        dialogTimestampLabel: "Timestamp",
+        dialogFrameLabel: "Frame",
       },
       behavior: {
         title: "Behavior Analysis",
@@ -450,6 +472,17 @@ function createFallbackAnalysis(): AnalysisResponse {
         image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
         detections: [
           { label: "Cash Bundle", confidence: 0.93, box: [12, 10, 88, 72] },
+        ],
+      },
+    ],
+    employee_keyframes: [
+      {
+        frame_index: 40,
+        timestamp_ms: 5000,
+        mime_type: "image/png",
+        image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
+        detections: [
+          { label: "Person", confidence: 0.88, box: [22, 18, 84, 96] },
         ],
       },
     ],

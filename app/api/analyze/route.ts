@@ -66,6 +66,21 @@ const createFallbackPayload = () => ({
       ],
     },
   ],
+  employee_keyframes: [
+    {
+      frame_index: 40,
+      timestamp_ms: 5000,
+      mime_type: "image/png",
+      image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAI0lEQVR4nGNgYGD4z0AEMMDEwMDAA4YwGhkYGBgY/AcAK1IDARpRq9EAAAAASUVORK5CYII=",
+      detections: [
+        {
+          label: "Person",
+          confidence: 0.88,
+          box: [22, 18, 84, 96],
+        },
+      ],
+    },
+  ],
   frame_sampling: {
     fps: 25,
     total_frames: 480,
