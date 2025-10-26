@@ -116,6 +116,64 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
     return JSONResponse(response_payload)
 
 
+def _normalize_prediction(pred: Any) -> Dict[str, Any]:
+    """Convert Roboflow/ObjectDetection predictions into a dictionary."""
+
+    if isinstance(pred, dict):
+        return pred
+
+    for attr in ("model_dump", "dict"):
+        method = getattr(pred, attr, None)
+        if callable(method):
+            try:
+                data = method()
+            except Exception:  # pragma: no cover - defensive against SDK changes
+                data = None
+            if isinstance(data, dict):
+                return data
+
+    data: Dict[str, Any] = {}
+
+    def _copy_attr(target_key: str, *source_keys: str) -> None:
+        for key in source_keys:
+            if hasattr(pred, key):
+                value = getattr(pred, key)
+                if value is not None:
+                    data[target_key] = value
+                    return
+
+    _copy_attr("class_id", "class_id", "classId", "classID")
+    _copy_attr("class", "class_name", "className", "class_label", "class_label_name", "class_", "class")
+    _copy_attr("confidence", "confidence", "score", "probability")
+    _copy_attr("x", "x", "x_center", "xc")
+    _copy_attr("y", "y", "y_center", "yc")
+    _copy_attr("width", "width", "w")
+    _copy_attr("height", "height", "h")
+
+    bbox = getattr(pred, "bounding_box", None) or getattr(pred, "bbox", None)
+    if bbox is not None:
+        bbox_dict: Dict[str, Any] | None = None
+        if isinstance(bbox, dict):
+            bbox_dict = bbox
+        else:
+            for attr in ("model_dump", "dict"):
+                method = getattr(bbox, attr, None)
+                if callable(method):
+                    try:
+                        bbox_dict = method()
+                    except Exception:  # pragma: no cover - defensive
+                        bbox_dict = None
+                    if isinstance(bbox_dict, dict):
+                        break
+        if isinstance(bbox_dict, dict):
+            data.setdefault("x", bbox_dict.get("x") or bbox_dict.get("x_center"))
+            data.setdefault("y", bbox_dict.get("y") or bbox_dict.get("y_center"))
+            data.setdefault("width", bbox_dict.get("width"))
+            data.setdefault("height", bbox_dict.get("height"))
+
+    return data
+
+
 def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     assert cash_model is not None, "现金检测模型未初始化"
     assert yolo_model is not None, "YOLO 模型未初始化"
@@ -170,21 +228,22 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         frame_has_cash = False
 
         for pred in predictions:
+            pred_data = _normalize_prediction(pred)
             try:
-                class_id = int(pred.get("class_id", -1))
+                class_id = int(pred_data.get("class_id", -1))
             except (TypeError, ValueError):
                 class_id = -1
 
-            label = cash_class_names.get(class_id, pred.get("class", str(class_id)))
-            confidence = float(pred.get("confidence", 0.0))
+            label = cash_class_names.get(class_id, pred_data.get("class", str(class_id)))
+            confidence = float(pred_data.get("confidence", 0.0) or 0.0)
 
             if cash_allowed_ids and class_id not in cash_allowed_ids:
                 continue
 
-            x_center = float(pred.get("x", 0.0))
-            y_center = float(pred.get("y", 0.0))
-            width = float(pred.get("width", 0.0))
-            height = float(pred.get("height", 0.0))
+            x_center = float(pred_data.get("x", 0.0) or 0.0)
+            y_center = float(pred_data.get("y", 0.0) or 0.0)
+            width = float(pred_data.get("width", 0.0) or 0.0)
+            height = float(pred_data.get("height", 0.0) or 0.0)
 
             x1 = max(int(x_center - width / 2), 0)
             y1 = max(int(y_center - height / 2), 0)
