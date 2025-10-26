@@ -40,6 +40,13 @@ type ResultsCopy = {
       visitor: string
     }
     identityLabel: (name?: string) => string
+    keyframesTitle: string
+    keyframesEmpty: string
+    detectionsLabel: string
+    viewLargerLabel: string
+    dialogTitle: string
+    dialogTimestampLabel: string
+    dialogFrameLabel: string
   }
   behavior: {
     title: string
@@ -69,12 +76,18 @@ function formatTimestamp(timestampMs: number) {
 }
 
 export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResultsDisplayProps) {
-  const keyframes = results.cash_keyframes ?? []
+  const cashKeyframes = results.cash_keyframes ?? []
+  const faceKeyframes = results.employee_keyframes ?? []
   const [frameViewerOpen, setFrameViewerOpen] = useState(false)
-  const [selectedFrame, setSelectedFrame] = useState<CashKeyframe | null>(null)
+  const [selectedFrame, setSelectedFrame] = useState<{ frame: CashKeyframe; source: "cash" | "face" } | null>(null)
+  const selectedDialogCopy = selectedFrame
+    ? selectedFrame.source === "face"
+      ? copy.face
+      : copy.cash
+    : null
 
-  const handleOpenFrame = (frame: CashKeyframe) => {
-    setSelectedFrame(frame)
+  const handleOpenFrame = (frame: CashKeyframe, source: "cash" | "face") => {
+    setSelectedFrame({ frame, source })
     setFrameViewerOpen(true)
   }
 
@@ -127,9 +140,9 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         </p>
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-semibold text-foreground">{copy.cash.keyframesTitle}</h4>
-          {keyframes.length ? (
+          {cashKeyframes.length ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              {keyframes.map((frame) => {
+              {cashKeyframes.map((frame) => {
                 const detectionSummary = frame.detections.length
                   ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
                   : "—"
@@ -140,7 +153,7 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
                   >
                     <button
                       type="button"
-                      onClick={() => handleOpenFrame(frame)}
+                      onClick={() => handleOpenFrame(frame, "cash")}
                       className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
                       aria-label={`${copy.cash.viewLargerLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
                     >
@@ -189,6 +202,50 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         </div>
         <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-sm font-medium text-foreground">
           {copy.face.identityLabel(results.employee_name)}
+        </div>
+        <div className="mt-4 space-y-2">
+          <h4 className="text-sm font-semibold text-foreground">{copy.face.keyframesTitle}</h4>
+          {faceKeyframes.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {faceKeyframes.map((frame) => {
+                const detectionSummary = frame.detections.length
+                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                  : "—"
+                return (
+                  <figure
+                    key={`face-${frame.frame_index}-${frame.timestamp_ms}`}
+                    className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleOpenFrame(frame, "face")}
+                      className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
+                      aria-label={`${copy.face.viewLargerLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+                    >
+                      <img
+                        src={`data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`}
+                        alt={`Employee detection frame ${frame.frame_index}`}
+                        className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
+                      />
+                      <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                        {copy.face.viewLargerLabel}
+                      </span>
+                    </button>
+                    <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
+                      <div className="font-medium text-foreground">
+                        {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
+                      </div>
+                      <div className="text-muted-foreground">
+                        <span className="font-semibold text-foreground">{copy.face.detectionsLabel}:</span> {detectionSummary}
+                      </div>
+                    </figcaption>
+                  </figure>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{copy.face.keyframesEmpty}</p>
+          )}
         </div>
       </ResultCard>
 
@@ -241,9 +298,24 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         </div>
         {results.objects.length ? (
           <div className="flex flex-wrap gap-2">
-            {results.objects.map((obj, index) => (
-              <span key={`${obj}-${index}`} className={cn("rounded-full px-3 py-1 text-xs font-semibold", shouldAlert ? "bg-destructive/10 text-destructive" : "bg-primary/20 text-primary")}>{obj}</span>
-            ))}
+            {results.objects.map((obj, index) => {
+              const isCashTag = /现金|cash/i.test(obj)
+              return (
+                <span
+                  key={`${obj}-${index}`}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold",
+                    isCashTag
+                      ? "border border-yellow-400/70 bg-yellow-500/20 text-yellow-700 shadow-sm"
+                      : shouldAlert
+                      ? "bg-destructive/10 text-destructive"
+                      : "bg-primary/20 text-primary",
+                  )}
+                >
+                  {obj}
+                </span>
+              )
+            })}
           </div>
         ) : (
           <div className="rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
@@ -253,34 +325,34 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
       </ResultCard>
       <Dialog open={frameViewerOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-4xl">
-          {selectedFrame && (
+          {selectedFrame && selectedDialogCopy && (
             <>
               <DialogHeader className="space-y-1">
-                <DialogTitle>{copy.cash.dialogTitle}</DialogTitle>
+                <DialogTitle>{selectedDialogCopy.dialogTitle}</DialogTitle>
                 <DialogDescription className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                   <span>
-                    {copy.cash.dialogTimestampLabel}: {formatTimestamp(selectedFrame.timestamp_ms)}
+                    {selectedDialogCopy.dialogTimestampLabel}: {formatTimestamp(selectedFrame.frame.timestamp_ms)}
                   </span>
                   <span>
-                    {copy.cash.dialogFrameLabel}: #{selectedFrame.frame_index}
+                    {selectedDialogCopy.dialogFrameLabel}: #{selectedFrame.frame.frame_index}
                   </span>
                   <span>
-                    {copy.cash.detectionsLabel}: {selectedFrame.detections.length}
+                    {selectedDialogCopy.detectionsLabel}: {selectedFrame.frame.detections.length}
                   </span>
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="overflow-hidden rounded-lg border border-border/50 bg-black/80">
                   <img
-                    src={`data:${selectedFrame.mime_type ?? "image/jpeg"};base64,${selectedFrame.image_base64}`}
-                    alt={`Cash detection frame ${selectedFrame.frame_index}`}
+                    src={`data:${selectedFrame.frame.mime_type ?? "image/jpeg"};base64,${selectedFrame.frame.image_base64}`}
+                    alt={`${selectedFrame.source === "face" ? "Employee" : "Cash"} detection frame ${selectedFrame.frame.frame_index}`}
                     className="mx-auto max-h-[70vh] w-full object-contain"
                   />
                 </div>
                 <div className="space-y-2">
-                  <h5 className="text-sm font-semibold text-foreground">{copy.cash.detectionsLabel}</h5>
+                  <h5 className="text-sm font-semibold text-foreground">{selectedDialogCopy.detectionsLabel}</h5>
                   <ul className="grid gap-2 text-sm">
-                    {selectedFrame.detections.map((det, index) => (
+                    {selectedFrame.frame.detections.map((det, index) => (
                       <li
                         key={`${det.label}-${index}-${det.box.join("-")}`}
                         className="rounded-md border border-border/40 bg-background/70 px-3 py-2"
