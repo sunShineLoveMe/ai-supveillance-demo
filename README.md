@@ -147,8 +147,8 @@ styles/
 3. 确保 `image` 字段与放置在目录中的文件名一致，否则后端会在启动日志中提示无法读取对应样本。
 4. 可通过环境变量覆盖默认路径或阈值：
    - `EMPLOYEE_GALLERY_DIR`：自定义图库目录；
-   - `EMPLOYEE_SIMILARITY_THRESHOLD`：匹配判定阈值（默认 0.38）；
-   - `EMPLOYEE_MIN_KEYPOINTS` / `EMPLOYEE_DISTANCE_THRESHOLD`：ORB 特征过滤策略。
+   - `EMPLOYEE_SIMILARITY_THRESHOLD`：匹配判定阈值（默认 0.32，已放宽以更容易命中真实员工）；
+   - `EMPLOYEE_MIN_KEYPOINTS` / `EMPLOYEE_DISTANCE_THRESHOLD`：ORB 特征过滤策略（默认距离阈值 60，用于纳入更多可用匹配对）。
 5. 后端启动日志会输出载入的样本列表，若目录为空则所有访客都会按外部人员处理，不再误判为内部员工。
 
 ## 人脸相似度分析流程
@@ -157,7 +157,7 @@ styles/
 2. **YOLOv8n 抓取候选框**：每一帧会送入 YOLOv8n（COCO 权重）模型，筛选 `person` / `face` 类别，获取候选人脸/上半身的边界框。
 3. **ORB 特征提取**：依据 YOLO 的边界框截取 ROI，转换为灰度后用 ORB（`EMPLOYEE_MAX_FEATURES`）提取关键点与描述子，过滤掉特征点不足的帧。
 4. **员工图库匹配**：将 ROI 特征与 `backend/employee_gallery` 中的每个样本进行 BFMatcher（汉明距离）比对，统计距离阈值以内的有效匹配数，形成 `employee_match_score`。
-5. **相似度换算与判定**：将匹配得分映射为 0~1 的 `face_similarity`，当得分 ≥ `EMPLOYEE_SIMILARITY_THRESHOLD`（默认 0.38）时判定为内部员工，否则视为访客。
+5. **相似度换算与判定**：将匹配得分映射为 0~1 的 `face_similarity`，当得分 ≥ `EMPLOYEE_SIMILARITY_THRESHOLD`（默认 0.32，可按需调整）时判定为内部员工，否则视为访客。
 6. **关键帧与日志**：命中员工样本的帧会附带 `match` 元信息写入 `employee_keyframes`，系统日志也会输出最佳匹配姓名与得分，便于复核。
 
 > 若图库为空或未命中任何样本，`internal_employee` 会保持 `false`，避免出现全部视频都被识别为内部员工的情况。
