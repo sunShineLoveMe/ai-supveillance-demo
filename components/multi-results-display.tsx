@@ -154,7 +154,15 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
               <div className="grid gap-3 sm:grid-cols-2">
                 {cashKeyframes.map((frame) => {
                   const detectionSummary = frame.detections.length
-                    ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                    ? frame.detections
+                        .map((det) => {
+                          const labelDisplay =
+                            det.raw_label && det.raw_label !== det.label
+                              ? `${det.label} (${det.raw_label})`
+                              : det.label
+                          return `${labelDisplay} ${(det.confidence * 100).toFixed(0)}%`
+                        })
+                        .join(" / ")
                     : "—"
                   const imageSrc = frame.image_base64
                     ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
@@ -195,6 +203,16 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
                         <div className="text-muted-foreground">
                           <span className="font-semibold text-foreground">{copy.cash.detectionsLabel}:</span> {detectionSummary}
                         </div>
+                        {frame.contains_cash === false ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            未检测到现金标签，展示模型输出供参考
+                          </div>
+                        ) : null}
+                        {frame.contains_cash ? (
+                          <div className="text-[11px] font-semibold text-destructive">
+                            捕获到疑似现金标注
+                          </div>
+                        ) : null}
                       </figcaption>
                     </figure>
                   )
@@ -233,7 +251,15 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
               <div className="grid gap-3 sm:grid-cols-2">
                 {faceKeyframes.map((frame) => {
                   const detectionSummary = frame.detections.length
-                    ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                    ? frame.detections
+                        .map((det) => {
+                          const labelDisplay =
+                            det.raw_label && det.raw_label !== det.label
+                              ? `${det.label} (${det.raw_label})`
+                              : det.label
+                          return `${labelDisplay} ${(det.confidence * 100).toFixed(0)}%`
+                        })
+                        .join(" / ")
                     : "—"
                   const matchSummary = frame.match
                     ? `${frame.match.name ?? copy.face.matchUnknownLabel} · ${(frame.match.similarity * 100).toFixed(1)}%`
@@ -413,7 +439,21 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
                         className="rounded-md border border-border/40 bg-background/70 px-3 py-2"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">{det.label}</span>
+                          <span className="flex items-center gap-2 text-foreground">
+                            <span className="font-medium">
+                              {det.label}
+                              {det.raw_label && det.raw_label !== det.label ? (
+                                <span className="ml-1 text-[11px] text-muted-foreground">
+                                  ({det.raw_label})
+                                </span>
+                              ) : null}
+                            </span>
+                            {det.is_cash ? (
+                              <span className="rounded-full bg-destructive/10 px-2 py-[1px] text-[10px] font-semibold text-destructive">
+                                现金
+                              </span>
+                            ) : null}
+                          </span>
                           <span className="font-mono text-xs text-muted-foreground">
                             {(det.confidence * 100).toFixed(1)}%
                           </span>

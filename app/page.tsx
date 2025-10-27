@@ -21,11 +21,14 @@ export type CashKeyframe = {
   mime_type?: string
   detections: {
     label: string
+    raw_label?: string
     confidence: number
     box: number[]
     match?: MatchSummary
+    is_cash?: boolean
   }[]
   match?: MatchSummary
+  contains_cash?: boolean
 }
 
 export type FrameSamplingMeta = {
