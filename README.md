@@ -58,6 +58,8 @@ styles/
    python -m venv .venv
    source .venv/bin/activate  # Windows 使用 .venv\\Scripts\\activate
    pip install -r backend/requirements.txt
+   # 将现金检测模型 (cash_detector.pt) 放在项目根目录或 backend/ 目录的 models/ 下即可自动识别
+   # 若放在其他位置，可通过环境变量手动指定：
    export LOCAL_CASH_MODEL_PATH="/absolute/path/to/your/cash_detector.pt"
    # 可选：自定义阈值（默认 0.25 / 0.45）
    # export CASH_MODEL_CONFIDENCE="0.25"

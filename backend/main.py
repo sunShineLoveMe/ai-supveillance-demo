@@ -68,14 +68,41 @@ def _load_yolo_model() -> YOLO:
     return YOLO(str(weights_path))
 
 
+def _resolve_cash_model_path(raw_path: Path) -> Optional[Path]:
+    """Resolve the configured cash model path with several fallbacks."""
+
+    candidates = []
+
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    else:
+        candidates.extend(
+            [
+                raw_path,
+                Path(__file__).parent / raw_path,
+                Path(__file__).parent.parent / raw_path,
+            ]
+        )
+
+        model_name = raw_path.name
+        candidates.extend(
+            [
+                Path(__file__).parent / "models" / model_name,
+                Path(__file__).parent.parent / "models" / model_name,
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
 def _load_cash_model() -> YOLO:
     global CASH_MODEL_PATH
 
-    weights_path = CASH_MODEL_PATH
-    if not weights_path.exists() and not weights_path.is_absolute():
-        candidate = Path(__file__).parent / weights_path
-        if candidate.exists():
-            weights_path = candidate
+    weights_path = _resolve_cash_model_path(CASH_MODEL_PATH) or CASH_MODEL_PATH
 
     if not weights_path.exists():
         raise RuntimeError(
