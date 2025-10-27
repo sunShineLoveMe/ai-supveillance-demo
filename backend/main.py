@@ -504,8 +504,14 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
+    cash_detected_flag = bool(analysis.get("cash_detected"))
+    if not cash_detected_flag:
+        cash_detected_flag = any(
+            frame.get("contains_cash") for frame in analysis.get("cash_keyframes", [])
+        )
+
     response_payload = {
-        "cash_transaction": bool(analysis["cash_keyframes"]),
+        "cash_transaction": cash_detected_flag,
         "cash_confidence": analysis["cash_confidence"],
         "internal_employee": analysis["internal_employee"],
         "face_similarity": analysis["face_similarity"],
@@ -604,44 +610,55 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     for idx, coords in enumerate(coords_list):
                         class_id = int(class_list[idx])
                         label_raw = cash_class_names.get(class_id, str(class_id))
-                        if cash_allowed_ids and class_id not in cash_allowed_ids:
-                            continue
-                        if not cash_allowed_ids and not _is_cash_like_label(label_raw):
-                            continue
-                        label = CASH_DISPLAY_LABEL or label_raw
+                        is_cash_candidate = False
+                        if cash_allowed_ids:
+                            is_cash_candidate = class_id in cash_allowed_ids
+                        else:
+                            is_cash_candidate = _is_cash_like_label(label_raw)
+
+                        display_label = (
+                            CASH_DISPLAY_LABEL if is_cash_candidate and CASH_DISPLAY_LABEL else label_raw
+                        )
                         confidence = float(conf_list[idx])
 
                         x1, y1, x2, y2 = [max(int(coord), 0) for coord in coords]
                         x2 = min(x2, frame_width - 1)
                         y2 = min(y2, frame_height - 1)
 
-                        detections.append(
-                            {
-                                "label": label,
-                                "confidence": round(confidence, 4),
-                                "box": [x1, y1, x2, y2],
-                            }
-                        )
+                        detection_payload: Dict[str, Any] = {
+                            "label": display_label,
+                            "confidence": round(confidence, 4),
+                            "box": [x1, y1, x2, y2],
+                        }
+                        if label_raw != display_label:
+                            detection_payload["raw_label"] = label_raw
+                        detection_payload["is_cash"] = is_cash_candidate
 
-                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                        detections.append(detection_payload)
+
+                        color = (0, 0, 255) if is_cash_candidate else (64, 156, 255)
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                         cv2.putText(
                             annotated_frame,
-                            f"{label} {confidence:.2f}",
+                            f"{display_label} {confidence:.2f}",
                             (x1, max(y1 - 10, 0)),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.5,
-                            (0, 0, 255),
+                            color,
                             2,
                         )
 
-                        highest_cash_conf = max(highest_cash_conf, confidence)
-                        collected_objects[label] = max(
-                            confidence, collected_objects.get(label, 0.0)
+                        collected_objects[display_label] = max(
+                            confidence, collected_objects.get(display_label, 0.0)
                         )
-                        collected_objects["Cash / 现金"] = max(
-                            confidence, collected_objects.get("Cash / 现金", 0.0)
-                        )
-                        frame_has_cash = True
+                        if is_cash_candidate:
+                            highest_cash_conf = max(highest_cash_conf, confidence)
+                            collected_objects["Cash / 现金"] = max(
+                                confidence, collected_objects.get("Cash / 现金", 0.0)
+                            )
+                            frame_has_cash = True
+                            cash_detected = True
+
 
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         yolo_results = employee_detector.predict(frame_rgb, verbose=False)[0]
@@ -722,7 +739,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
             if lower_label in {"person", "hand", "face"}:
                 collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
 
-        if frame_has_cash and detections:
+        if detections:
             _, buffer = cv2.imencode(".jpg", annotated_frame)
             frame_b64 = base64.b64encode(buffer).decode("utf-8")
             timestamp_ms = int((frame_index / fps) * 1000) if fps else 0
@@ -733,9 +750,9 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     "mime_type": "image/jpeg",
                     "image_base64": frame_b64,
                     "detections": detections,
+                    "contains_cash": frame_has_cash,
                 }
             )
-            cash_detected = True
 
         if frame_has_employee and face_detections:
             _, face_buffer = cv2.imencode(".jpg", face_annotated_frame)
@@ -769,8 +786,6 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
 
     capture.release()
 
-    cash_detected = cash_detected or bool(sampled_frames)
-
     if cash_detected:
         boosted_cash_conf = max(0.95, highest_cash_conf, collected_objects.get("Cash / 现金", 0.0))
         collected_objects["Cash / 现金"] = boosted_cash_conf
@@ -778,7 +793,8 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     objects_sorted = sorted(collected_objects.items(), key=lambda kv: kv[1], reverse=True)
     top_objects = [f"{label} ({conf:.0%})" for label, conf in objects_sorted[:6]]
 
-    behavior_confidence = 0.6 + 0.2 * min(len(sampled_frames) / max(processed_frames or 1, 1), 1)
+    cash_frame_count = sum(1 for frame in sampled_frames if frame.get("contains_cash"))
+    behavior_confidence = 0.6 + 0.2 * min(cash_frame_count / max(processed_frames or 1, 1), 1)
     object_confidence = objects_sorted[0][1] if objects_sorted else 0.4
 
     base_cash_conf = highest_cash_conf or (0.12 if cash_detected else 0.05)
@@ -786,7 +802,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         base_cash_conf = max(base_cash_conf, min(0.98, 0.65 + 0.35 * (highest_cash_conf or 0.5)))
 
     if best_employee_similarity > 0:
-        face_similarity = min(0.2 + best_employee_similarity * 0.75, 0.98)
+        face_similarity = min(max(best_employee_similarity, 0.0), 0.99)
     else:
         face_similarity = min(0.18 + 0.4 * min(highest_face_conf, 1.0), 0.45)
     internal_employee = best_employee_similarity >= EMPLOYEE_SIMILARITY_THRESHOLD
@@ -796,7 +812,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         "cash_confidence": round(base_cash_conf, 4),
         "cash_keyframes": sampled_frames,
         "employee_keyframes": employee_keyframes,
-        "actions": _derive_actions(cash_detected, len(sampled_frames)),
+        "actions": _derive_actions(cash_detected, cash_frame_count),
         "objects": top_objects,
         "behavior_confidence": round(min(behavior_confidence, 0.95), 4),
         "object_confidence": round(max(object_confidence, 0.35), 4),
@@ -804,6 +820,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         "face_similarity": round(face_similarity, 4),
         "employee_name": matched_employee_name,
         "employee_match_score": round(best_employee_similarity, 4),
+        "cash_detected": cash_detected,
         "alert": False,
         "alert_message": None,
         "frame_sampling": {
