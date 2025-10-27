@@ -44,6 +44,30 @@ CASH_ALLOWED_LABELS = [
     for item in os.getenv("CASH_ALLOWED_LABELS", "").split(",")
     if item.strip()
 ]
+CASH_DISPLAY_LABEL = os.getenv("CASH_DISPLAY_LABEL", "现金")
+DEFAULT_CASH_LABEL_KEYWORDS = {
+    "cash",
+    "cashmoney",
+    "cash_note",
+    "cashnote",
+    "currency",
+    "currency_note",
+    "money",
+    "paper_money",
+    "paper-money",
+    "banknote",
+    "bank_note",
+    "bank-note",
+    "bill",
+    "cash/bill",
+    "现金",
+    "钞票",
+    "纸币",
+    "人民币",
+    "cny",
+    "rmb",
+    "yuan",
+}
 
 EMPLOYEE_GALLERY_DIR = Path(
     os.getenv("EMPLOYEE_GALLERY_DIR", Path(__file__).parent / "employee_gallery")
@@ -111,6 +135,21 @@ def _load_cash_model() -> YOLO:
 
     CASH_MODEL_PATH = weights_path
     return YOLO(str(weights_path))
+
+
+def _normalize_label(label: str) -> str:
+    return label.strip().lower()
+
+
+def _is_cash_like_label(label: str) -> bool:
+    normalized = _normalize_label(label)
+    compact = normalized.replace(" ", "").replace("_", "").replace("-", "")
+    for keyword in DEFAULT_CASH_LABEL_KEYWORDS:
+        keyword_norm = keyword.lower()
+        keyword_compact = keyword_norm.replace(" ", "").replace("_", "").replace("-", "")
+        if keyword_norm in normalized or keyword_compact in compact:
+            return True
+    return False
 
 
 yolo_model: Optional[YOLO] = None
@@ -412,24 +451,35 @@ def startup_event() -> None:
             allowed_ids = [
                 idx
                 for idx, name in cash_class_names.items()
-                if str(name).lower() in CASH_ALLOWED_LABELS
+                if _normalize_label(str(name)) in CASH_ALLOWED_LABELS
             ]
         elif CASH_ALLOWED_PREFIX:
             allowed_ids = [
                 idx
                 for idx, name in cash_class_names.items()
-                if str(name).lower().startswith(CASH_ALLOWED_PREFIX)
+                if _normalize_label(str(name)).startswith(CASH_ALLOWED_PREFIX)
             ]
 
         if not allowed_ids and cash_class_names:
-            allowed_ids = list(cash_class_names.keys())
+            auto_cash_ids = [
+                idx
+                for idx, name in cash_class_names.items()
+                if _is_cash_like_label(name)
+            ]
+            if auto_cash_ids:
+                allowed_ids = auto_cash_ids
+
+        if not allowed_ids and cash_class_names:
+            logger.warning(
+                "现金检测模型未匹配到现金类别，已禁用所有类别，需要通过环境变量显式设置"
+            )
 
         cash_allowed_ids = allowed_ids
 
         logger.info(
             "已加载本地现金检测模型: weights=%s, allowed_class_ids=%s, confidence>=%.2f, iou>=%.2f",
             str(CASH_MODEL_PATH),
-            cash_allowed_ids or "全部",
+            cash_allowed_ids or "无",
             CASH_MODEL_CONFIDENCE,
             CASH_MODEL_IOU,
         )
@@ -553,10 +603,12 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     class_list = classes.tolist()  # type: ignore[union-attr]
                     for idx, coords in enumerate(coords_list):
                         class_id = int(class_list[idx])
+                        label_raw = cash_class_names.get(class_id, str(class_id))
                         if cash_allowed_ids and class_id not in cash_allowed_ids:
                             continue
-
-                        label = cash_class_names.get(class_id, str(class_id))
+                        if not cash_allowed_ids and not _is_cash_like_label(label_raw):
+                            continue
+                        label = CASH_DISPLAY_LABEL or label_raw
                         confidence = float(conf_list[idx])
 
                         x1, y1, x2, y2 = [max(int(coord), 0) for coord in coords]
@@ -578,7 +630,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                             (x1, max(y1 - 10, 0)),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.5,
-                            (0, 255, 255),
+                            (0, 0, 255),
                             2,
                         )
 

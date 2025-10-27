@@ -37,8 +37,8 @@ styles/
   - 现金交易检测：Radix Progress 显示概率，并根据阈值展示不同状态标签，同时在分析摘要中合并展示 "Cash / 现金" 置信度。
   - 员工人脸识别：显示匹配度与匹配员工信息。
   - 行为分析：列表化展示检测到的行为，并提供置信度条。
-  - 物体检测：展示识别到的目标标签与识别置信度，并对现金相关标签以黄色圆角徽标强调。
-- 🖼️ **现金与员工关键帧回放**：FastAPI 调用本地现金交易 YOLO 模型逐帧识别人民币并以黄色框高亮，同时并行使用 YOLOv8n 抓取人员/人脸信息，前端左侧展示疑似现金关键帧，右侧展示疑似员工关键帧，均支持点击缩略图放大查看检测详情。
+  - 物体检测：展示识别到的目标标签与识别置信度，并对现金相关标签以醒目的圆角徽标强调。
+- 🖼️ **现金与员工关键帧回放**：FastAPI 调用本地现金交易 YOLO 模型逐帧识别人民币并以红色框高亮，同时并行使用 YOLOv8n 抓取人员/人脸信息，前端左侧展示疑似现金关键帧，右侧展示疑似员工关键帧，均支持点击缩略图放大查看检测详情。
 - 🚨 **智能告警**：当现金概率 ≥ 0.9 且员工相似度 ≥ 0.85 时，标题区与相关卡片触发红色闪烁动画，并弹出告警横幅。
 - 📝 **系统日志**：可折叠区域展示 AI 返回的原始 JSON 以及按时间排序的事件日志，支持中英文切换。
 - 🌐 **多语言支持**：所有界面文案支持中英文一键切换。
@@ -61,6 +61,10 @@ styles/
    # 将现金检测模型 (cash_detector.pt) 放在项目根目录或 backend/ 目录的 models/ 下即可自动识别
    # 若放在其他位置，可通过环境变量手动指定：
    export LOCAL_CASH_MODEL_PATH="/absolute/path/to/your/cash_detector.pt"
+   # 若模型的类别名称不包含“cash/现金”关键字，可通过以下方式限定或重命名展示标签：
+   # export CASH_ALLOWED_LABELS="cash,现金"
+   # export CASH_ALLOWED_PREFIX="cash"
+   # export CASH_DISPLAY_LABEL="现金"
    # 可选：自定义阈值（默认 0.25 / 0.45）
    # export CASH_MODEL_CONFIDENCE="0.25"
    # export CASH_MODEL_IOU="0.45"
@@ -101,7 +105,7 @@ styles/
       "mime_type": "image/jpeg",
       "image_base64": "...",
       "detections": [
-        { "label": "Cash Bundle", "confidence": 0.93, "box": [12, 10, 88, 72] }
+        { "label": "现金", "confidence": 0.93, "box": [12, 10, 88, 72] }
       ]
     }
   ],
