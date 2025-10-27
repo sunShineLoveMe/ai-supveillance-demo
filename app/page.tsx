@@ -248,21 +248,21 @@ type TranslationBundle = {
 
 const translations: Record<Language, TranslationBundle> = {
   zh: {
-    title: "AI 智能柜台监控 Demo 系统",
-    subtitle: "上传视频后，AI 自动分析四种检测结果",
+    title: "柜台现金交易监控告警系统（模拟）",
+    subtitle: "上传视频后，系统自动分析检测结果",
     languageToggle: "English",
     upload: {
       sectionTitle: "视频上传区",
-      sectionDescription: "上传视频后，系统将自动调用四种检测模型进行分析",
+      sectionDescription: "上传视频后，系统自动分析检测结果",
       emptyPlaceholder: "暂无视频",
       uploadButton: "上传视频",
       reuploadButton: "重新上传视频",
-      analyzeButton: "开始 AI 分析",
-      analyzingLabel: "AI 分析中...",
+      analyzeButton: "开始算法分析",
+      analyzingLabel: "模型分析中...",
       dropHint: ".mp4 · .mov · 拖拽或点击下方按钮上传",
     },
     results: {
-      heading: "AI 分析结果（四种检测）",
+      heading: "分析结果",
       cash: {
         title: "现金交易检测",
         progressLabel: "现金概率",
@@ -755,7 +755,7 @@ export default function Page() {
         />
 
         <footer className="mt-12 border-t border-border pt-6 text-center text-sm text-muted-foreground">
-          © 2025 Zhiyun Tech · AI Surveillance Demo
+          © 2025 · 柜台现金交易监控告警系统
         </footer>
       </div>
     </div>
