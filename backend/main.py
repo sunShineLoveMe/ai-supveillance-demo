@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +16,8 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from ultralytics import YOLO
+
+import paho.mqtt.client as mqtt
 
 APP_TITLE = "AI Smart Counter Monitor Backend"
 APP_VERSION = "1.0.0"
@@ -79,6 +82,25 @@ EMPLOYEE_SIMILARITY_THRESHOLD = float(os.getenv("EMPLOYEE_SIMILARITY_THRESHOLD",
 EMPLOYEE_MIN_KEYPOINTS = int(os.getenv("EMPLOYEE_MIN_KEYPOINTS", "10"))
 EMPLOYEE_DISTANCE_THRESHOLD = float(os.getenv("EMPLOYEE_DISTANCE_THRESHOLD", "60"))
 EMPLOYEE_MAX_FEATURES = int(os.getenv("EMPLOYEE_MAX_FEATURES", "512"))
+
+MQTT_ENABLED = os.getenv("MQTT_ENABLED", "1").strip().lower() not in {"0", "false", "off"}
+MQTT_BROKER = os.getenv("MQTT_BROKER", "124.71.167.89")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "8087"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "lanbao")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "lanbao")
+MQTT_TOPIC = os.getenv(
+    "MQTT_TOPIC", "/edge/mqtt/d5f9610f-986e-4913-a3e0-696fa8ee2123/rtg"
+)
+MQTT_PROTOCOL = mqtt.MQTTv311
+MQTT_DEVICE_ID = os.getenv("MQTT_DEVICE_ID", "device_1")
+MQTT_PRIMARY_KEY = os.getenv("MQTT_PRIMARY_KEY", "mqtt")
+MQTT_SERIAL_NUMBER = os.getenv(
+    "MQTT_SERIAL_NUMBER", "d5f9610f-986e-4913-a3e0-696fa8ee2123"
+)
+MQTT_VERSION = os.getenv("MQTT_VERSION", "2.0.0")
+MQTT_ALARM_CODE = os.getenv("MQTT_ALARM_CODE", "z_alarm_02")
+MQTT_SNAPSHOT_URL = os.getenv("MQTT_SNAPSHOT_URL")
+MQTT_KEEPALIVE = int(os.getenv("MQTT_KEEPALIVE", "60"))
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -150,6 +172,65 @@ def _is_cash_like_label(label: str) -> bool:
         if keyword_norm in normalized or keyword_compact in compact:
             return True
     return False
+
+
+def _build_mqtt_payload(timestamp: Optional[int] = None) -> Dict[str, Any]:
+    payload_timestamp = int(timestamp or time.time())
+    measurements: Dict[str, Any] = {"m": MQTT_ALARM_CODE, "v": 1}
+    if MQTT_SNAPSHOT_URL:
+        measurements["url"] = MQTT_SNAPSHOT_URL
+
+    device_payload: Dict[str, Any] = {
+        "d": [measurements],
+        "dev": MQTT_DEVICE_ID,
+    }
+
+    return {
+        "devs": [device_payload],
+        "pKey": MQTT_PRIMARY_KEY,
+        "sn": MQTT_SERIAL_NUMBER,
+        "ts": payload_timestamp,
+        "ver": MQTT_VERSION,
+    }
+
+
+def _publish_mqtt_alert() -> None:
+    if not MQTT_ENABLED:
+        return
+
+    payload = _build_mqtt_payload()
+    client = mqtt.Client(protocol=MQTT_PROTOCOL)
+
+    if MQTT_USERNAME or MQTT_PASSWORD:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    loop_started = False
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE)
+        client.loop_start()
+        loop_started = True
+        result = client.publish(
+            MQTT_TOPIC,
+            json.dumps(payload, ensure_ascii=False),
+        )
+        result.wait_for_publish()
+        if result[0] != mqtt.MQTT_ERR_SUCCESS:
+            logger.error(
+                "MQTT 报警消息发送失败: topic=%s, result_code=%s",
+                MQTT_TOPIC,
+                result[0],
+            )
+        else:
+            logger.info("已发送 MQTT 报警: topic=%s, payload=%s", MQTT_TOPIC, payload)
+    except Exception:
+        logger.exception("MQTT 报警发送异常")
+    finally:
+        try:
+            if loop_started:
+                client.loop_stop()
+            client.disconnect()
+        except Exception:  # pragma: no cover - disconnect best effort
+            logger.debug("MQTT 客户端断开连接时出现问题", exc_info=True)
 
 
 yolo_model: Optional[YOLO] = None
@@ -528,6 +609,9 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
         "employee_match_score": analysis.get("employee_match_score"),
     }
 
+    if cash_detected_flag and analysis.get("internal_employee"):
+        _publish_mqtt_alert()
+
     return JSONResponse(response_payload)
 
 
@@ -637,10 +721,14 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                         detections.append(detection_payload)
 
                         color = (0, 0, 255) if is_cash_candidate else (64, 156, 255)
+                        annotation_label = label_raw or display_label
+                        if not annotation_label or not annotation_label.isascii():
+                            candidate_label = display_label if display_label and display_label.isascii() else "cash"
+                            annotation_label = candidate_label
                         cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                         cv2.putText(
                             annotated_frame,
-                            f"{display_label} {confidence:.2f}",
+                            f"{annotation_label} {confidence:.2f}",
                             (x1, max(y1 - 10, 0)),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.5,
