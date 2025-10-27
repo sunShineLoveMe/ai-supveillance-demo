@@ -2,13 +2,5 @@
     {
       "name": "员工张伟",
       "image": "sample_employee01.jpg"
-    },
-    {
-        "name": "员工李明明",
-        "image": "sample_employee02.jpg"
-    },
-    {
-          "name": "员工王丽丽",
-          "image": "sample_employee03.jpg"
     }
 ]
