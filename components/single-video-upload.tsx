@@ -66,25 +66,27 @@ export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze
         <p className="text-sm text-muted-foreground">{copy.sectionDescription}</p>
       </div>
 
-      <div
-        className={`mb-5 flex h-[220px] w-full flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all sm:h-[260px] lg:h-[300px] ${
-          isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
-        }`}
-        onDragOver={handleDragOver}
-        onDragEnter={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        role="presentation"
-      >
-        {videoUrl ? (
-          <video src={videoUrl} className="h-full w-full object-cover" controls playsInline />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
-            <FileVideo className="h-12 w-12" />
-            <div className="text-sm font-medium">{copy.emptyPlaceholder}</div>
-            <p className="text-xs opacity-80">{copy.dropHint}</p>
-          </div>
-        )}
+      <div className="mb-5 flex w-full justify-center">
+        <div
+          className={`flex aspect-square w-full max-w-[320px] items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all sm:max-w-[360px] lg:max-w-[420px] ${
+            isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
+          }`}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          role="presentation"
+        >
+          {videoUrl ? (
+            <video src={videoUrl} className="h-full w-full object-contain" controls playsInline />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
+              <FileVideo className="h-12 w-12" />
+              <div className="text-sm font-medium">{copy.emptyPlaceholder}</div>
+              <p className="text-xs opacity-80">{copy.dropHint}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">
