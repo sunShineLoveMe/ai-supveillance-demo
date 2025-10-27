@@ -68,7 +68,7 @@ export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze
 
       <div className="mb-5 flex w-full justify-center">
         <div
-          className={`flex aspect-square w-full max-w-[320px] items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all sm:max-w-[360px] lg:max-w-[420px] ${
+          className={`flex aspect-square w-full max-w-[420px] items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all sm:max-w-[480px] lg:max-w-[560px] ${
             isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
           }`}
           onDragOver={handleDragOver}

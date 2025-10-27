@@ -571,7 +571,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                             }
                         )
 
-                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                         cv2.putText(
                             annotated_frame,
                             f"{label} {confidence:.2f}",
