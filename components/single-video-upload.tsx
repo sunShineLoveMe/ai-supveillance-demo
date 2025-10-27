@@ -60,14 +60,14 @@ export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze
   }
 
   return (
-    <Card className="overflow-hidden border-2 border-primary/30 bg-card/60 p-6">
-      <div className="mb-6 flex flex-col gap-2 text-center">
+    <Card className="overflow-hidden border-2 border-primary/30 bg-card/60 p-5 sm:p-6">
+      <div className="mb-5 flex flex-col gap-2 text-center">
         <h2 className="text-2xl font-bold text-foreground">{copy.sectionTitle}</h2>
         <p className="text-sm text-muted-foreground">{copy.sectionDescription}</p>
       </div>
 
       <div
-        className={`mb-6 flex aspect-video flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all ${
+        className={`mb-5 flex h-[220px] w-full flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all sm:h-[260px] lg:h-[300px] ${
           isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
         }`}
         onDragOver={handleDragOver}
