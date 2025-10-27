@@ -150,54 +150,56 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-semibold text-foreground">{copy.cash.keyframesTitle}</h4>
           {cashKeyframes.length ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {cashKeyframes.map((frame) => {
-                const detectionSummary = frame.detections.length
-                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
-                  : "—"
-                const imageSrc = frame.image_base64
-                  ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
-                  : null
-                const previewLabel = imageSrc ? copy.cash.viewLargerLabel : copy.cash.previewUnavailable
-                return (
-                  <figure
-                    key={`${frame.frame_index}-${frame.timestamp_ms}`}
-                    className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleOpenFrame(frame, "cash")}
-                      className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
-                      aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+            <div className="max-h-[420px] overflow-y-auto pr-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {cashKeyframes.map((frame) => {
+                  const detectionSummary = frame.detections.length
+                    ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                    : "—"
+                  const imageSrc = frame.image_base64
+                    ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
+                    : null
+                  const previewLabel = imageSrc ? copy.cash.viewLargerLabel : copy.cash.previewUnavailable
+                  return (
+                    <figure
+                      key={`${frame.frame_index}-${frame.timestamp_ms}`}
+                      className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
                     >
-                      {imageSrc ? (
-                        <img
-                          src={imageSrc}
-                          alt={`Cash detection frame ${frame.frame_index}`}
-                          className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
-                        />
-                      ) : (
-                        <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
-                          {copy.cash.previewUnavailable}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFrame(frame, "cash")}
+                        className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
+                        aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+                      >
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={`Cash detection frame ${frame.frame_index}`}
+                            className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
+                            {copy.cash.previewUnavailable}
+                          </div>
+                        )}
+                        {imageSrc ? (
+                          <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            {copy.cash.viewLargerLabel}
+                          </span>
+                        ) : null}
+                      </button>
+                      <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
+                        <div className="font-medium text-foreground">
+                          {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
                         </div>
-                      )}
-                      {imageSrc ? (
-                        <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                          {copy.cash.viewLargerLabel}
-                        </span>
-                      ) : null}
-                    </button>
-                    <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
-                      <div className="font-medium text-foreground">
-                        {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
-                      </div>
-                      <div className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{copy.cash.detectionsLabel}:</span> {detectionSummary}
-                      </div>
-                    </figcaption>
-                  </figure>
-                )
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{copy.cash.detectionsLabel}:</span> {detectionSummary}
+                        </div>
+                      </figcaption>
+                    </figure>
+                  )
               })}
+              </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">{copy.cash.keyframesEmpty}</p>
@@ -227,60 +229,62 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-semibold text-foreground">{copy.face.keyframesTitle}</h4>
           {faceKeyframes.length ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {faceKeyframes.map((frame) => {
-                const detectionSummary = frame.detections.length
-                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
-                  : "—"
-                const matchSummary = frame.match
-                  ? `${frame.match.name ?? copy.face.matchUnknownLabel} · ${(frame.match.similarity * 100).toFixed(1)}%`
-                  : copy.face.matchUnknownLabel
-                const imageSrc = frame.image_base64
-                  ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
-                  : null
-                const previewLabel = imageSrc ? copy.face.viewLargerLabel : copy.face.previewUnavailable
-                return (
-                  <figure
-                    key={`face-${frame.frame_index}-${frame.timestamp_ms}`}
-                    className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleOpenFrame(frame, "face")}
-                      className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
-                      aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+            <div className="max-h-[420px] overflow-y-auto pr-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {faceKeyframes.map((frame) => {
+                  const detectionSummary = frame.detections.length
+                    ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
+                    : "—"
+                  const matchSummary = frame.match
+                    ? `${frame.match.name ?? copy.face.matchUnknownLabel} · ${(frame.match.similarity * 100).toFixed(1)}%`
+                    : copy.face.matchUnknownLabel
+                  const imageSrc = frame.image_base64
+                    ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
+                    : null
+                  const previewLabel = imageSrc ? copy.face.viewLargerLabel : copy.face.previewUnavailable
+                  return (
+                    <figure
+                      key={`face-${frame.frame_index}-${frame.timestamp_ms}`}
+                      className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
                     >
-                      {imageSrc ? (
-                        <img
-                          src={imageSrc}
-                          alt={`Employee detection frame ${frame.frame_index}`}
-                          className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
-                        />
-                      ) : (
-                        <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
-                          {copy.face.previewUnavailable}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFrame(frame, "face")}
+                        className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
+                        aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+                      >
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={`Employee detection frame ${frame.frame_index}`}
+                            className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
+                            {copy.face.previewUnavailable}
+                          </div>
+                        )}
+                        {imageSrc ? (
+                          <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            {copy.face.viewLargerLabel}
+                          </span>
+                        ) : null}
+                      </button>
+                      <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
+                        <div className="font-medium text-foreground">
+                          {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
                         </div>
-                      )}
-                      {imageSrc ? (
-                        <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                          {copy.face.viewLargerLabel}
-                        </span>
-                      ) : null}
-                    </button>
-                    <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
-                      <div className="font-medium text-foreground">
-                        {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
-                      </div>
-                      <div className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{copy.face.detectionsLabel}:</span> {detectionSummary}
-                      </div>
-                      <div className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{copy.face.matchSummaryLabel}:</span> {matchSummary}
-                      </div>
-                    </figcaption>
-                  </figure>
-                )
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{copy.face.detectionsLabel}:</span> {detectionSummary}
+                        </div>
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{copy.face.matchSummaryLabel}:</span> {matchSummary}
+                        </div>
+                      </figcaption>
+                    </figure>
+                  )
               })}
+              </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">{copy.face.keyframesEmpty}</p>
