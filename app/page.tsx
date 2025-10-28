@@ -6,6 +6,7 @@ import { SingleVideoUpload } from "@/components/single-video-upload"
 import { MultiResultsDisplay } from "@/components/multi-results-display"
 import { SystemLog } from "@/components/system-log"
 import { AlertTriangle } from "lucide-react"
+import type { VideoAnnotationFrame } from "@/lib/video-annotations"
 
 export type Language = "zh"
 
@@ -487,6 +488,45 @@ export default function Page() {
     return results.cash_transaction && results.internal_employee
   }, [results])
 
+  const annotationFrames = useMemo<VideoAnnotationFrame[]>(() => {
+    if (!results) {
+      return []
+    }
+
+    const frames: VideoAnnotationFrame[] = []
+
+    const addFrame = (frame: CashKeyframe, source: "cash" | "face") => {
+      const detections = frame.detections
+        .filter((det) => Array.isArray(det.box) && det.box.length >= 4)
+        .map((det, index) => ({
+          id: `${source}-${frame.frame_index}-${frame.timestamp_ms}-${index}`,
+          label: det.label,
+          confidence: det.confidence,
+          box: det.box,
+          matchName: det.match?.name ?? frame.match?.name ?? null,
+          isCash: det.is_cash ?? (source === "cash" ? true : undefined),
+        }))
+
+      if (detections.length > 0) {
+        frames.push({
+          timestampMs: frame.timestamp_ms,
+          source,
+          detections,
+        })
+      }
+    }
+
+    for (const frame of results.cash_keyframes ?? []) {
+      addFrame(frame, "cash")
+    }
+
+    for (const frame of results.employee_keyframes ?? []) {
+      addFrame(frame, "face")
+    }
+
+    return frames.sort((a, b) => a.timestampMs - b.timestampMs)
+  }, [results])
+
   const handleFileUpload = (file: File) => {
     if (videoUrl) {
       URL.revokeObjectURL(videoUrl)
@@ -611,6 +651,7 @@ export default function Page() {
             onAnalyze={handleAnalyze}
             hasVideo={!!videoFile}
             copy={ui.upload}
+            annotations={annotationFrames}
           />
         </div>
 
