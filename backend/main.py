@@ -98,7 +98,7 @@ MQTT_SERIAL_NUMBER = os.getenv(
     "MQTT_SERIAL_NUMBER", "d5f9610f-986e-4913-a3e0-696fa8ee2123"
 )
 MQTT_VERSION = os.getenv("MQTT_VERSION", "2.0.0")
-MQTT_ALARM_CODE = os.getenv("MQTT_ALARM_CODE", "z_alarm_02")
+MQTT_ALARM_CODE = os.getenv("MQTT_ALARM_CODE", "z_alarm_01")
 MQTT_SNAPSHOT_URL = os.getenv("MQTT_SNAPSHOT_URL")
 MQTT_KEEPALIVE = int(os.getenv("MQTT_KEEPALIVE", "60"))
 
