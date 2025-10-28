@@ -5,10 +5,9 @@ import { useEffect, useMemo, useState } from "react"
 import { SingleVideoUpload } from "@/components/single-video-upload"
 import { MultiResultsDisplay } from "@/components/multi-results-display"
 import { SystemLog } from "@/components/system-log"
-import { Button } from "@/components/ui/button"
-import { AlertTriangle, Languages } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 
-export type Language = "zh" | "en"
+export type Language = "zh"
 
 export type MatchSummary = {
   name?: string | null
@@ -22,11 +21,14 @@ export type CashKeyframe = {
   mime_type?: string
   detections: {
     label: string
+    raw_label?: string
     confidence: number
     box: number[]
     match?: MatchSummary
+    is_cash?: boolean
   }[]
   match?: MatchSummary
+  contains_cash?: boolean
 }
 
 export type FrameSamplingMeta = {
@@ -238,7 +240,6 @@ type AlertCopy = {
 type TranslationBundle = {
   title: string
   subtitle: string
-  languageToggle: string
   upload: UploadCopy
   results: ResultsCopy
   systemLog: SystemLogCopy
@@ -250,7 +251,6 @@ const translations: Record<Language, TranslationBundle> = {
   zh: {
     title: "柜台现金交易监控告警系统（模拟）",
     subtitle: "上传视频后，系统自动分析检测结果",
-    languageToggle: "English",
     upload: {
       sectionTitle: "视频上传区",
       sectionDescription: "上传视频后，系统自动分析检测结果",
@@ -359,121 +359,6 @@ const translations: Record<Language, TranslationBundle> = {
         `检测到内部员工 ${name ?? "未知员工"} 可能正在进行现金交易，请立即核查。`,
     },
   },
-  en: {
-    title: "AI Smart Counter Surveillance Demo",
-    subtitle: "Upload a video and let AI run four detection pipelines",
-    languageToggle: "中文",
-    upload: {
-      sectionTitle: "Video Upload",
-      sectionDescription: "Drop or choose a video to trigger the four AI detection pipelines automatically",
-      emptyPlaceholder: "No video uploaded",
-      uploadButton: "Upload Video",
-      reuploadButton: "Re-upload Video",
-      analyzeButton: "Start AI Analysis",
-      analyzingLabel: "AI Analyzing...",
-      dropHint: ".mp4 · .mov · Drag & drop or use the buttons below",
-    },
-    results: {
-      heading: "AI Analysis Output (Four Detectors)",
-      cash: {
-        title: "Cash Transaction Detection",
-        progressLabel: "Cash Confidence",
-        statuses: {
-          highRisk: "High-risk cash transaction",
-          detected: "Cash detected",
-          clear: "No cash detected",
-        },
-        details: {
-          detected: "Potential cash movement detected. Please verify the ongoing operation immediately.",
-          clear: "No clear cash activity was detected.",
-        },
-        keyframesTitle: "Cash Key Frames",
-        keyframesEmpty: "No key frames captured",
-        previewUnavailable: "No preview available",
-        detectionsLabel: "Detections",
-        viewLargerLabel: "View larger",
-        dialogTitle: "Key Frame Details",
-        dialogTimestampLabel: "Timestamp",
-        dialogFrameLabel: "Frame",
-      },
-      face: {
-        title: "Employee Face Recognition",
-        progressLabel: "Employee Similarity",
-        statuses: {
-          employee: "Identified as internal staff",
-          visitor: "Identified as visitor",
-        },
-        identityLabel: (matched: boolean, name?: string | null) =>
-          matched ? `Matched staff: ${name ?? "Unknown"}` : "No internal staff matched",
-        matchSummaryLabel: "Match result",
-        matchUnknownLabel: "No registry match",
-        dialogMatchLabel: "Match result",
-        keyframesTitle: "Employee Key Frames",
-        keyframesEmpty: "No employee key frames",
-        previewUnavailable: "No preview available",
-        detectionsLabel: "Detections",
-        viewLargerLabel: "View larger",
-        dialogTitle: "Face Key Frame Details",
-        dialogTimestampLabel: "Timestamp",
-        dialogFrameLabel: "Frame",
-      },
-      behavior: {
-        title: "Behavior Analysis",
-        badgeLabel: (count: number) => `${count} behaviors detected`,
-        confidenceLabel: "Behavior confidence",
-        empty: "No suspicious behavior detected",
-      },
-      objects: {
-        title: "Object Detection",
-        badgeLabel: (count: number) => `${count} objects recognized`,
-        empty: "No objects identified",
-        confidenceLabel: "Detection confidence",
-      },
-    },
-    systemLog: {
-      heading: "System Log",
-      rawJsonLabel: "Raw JSON from AI",
-      timelineLabel: "Event timeline",
-      empty: "No log entries yet",
-      samplingLabel: "Frame Sampling Metrics",
-      samplingEmpty: "No sampling data yet",
-      samplingItems: {
-        fps: "Sampling FPS",
-        totalFrames: "Total frames",
-        duration: "Duration",
-        processed: "Frames processed",
-        interval: "Sampling interval (frames)",
-        generatedAt: "Generated at",
-      },
-    },
-    logs: {
-      boot: "System bootstrap completed",
-      cashModule: "Cash detection module loaded",
-      faceModule: "Employee recognition module loaded",
-      behaviorModule: "Behavior analysis module loaded",
-      objectModule: "Object detection module loaded",
-      uploadSuccess: (fileName: string) => `Video \"${fileName}\" uploaded successfully`,
-      analysisStart: "AI analysis started",
-      analysisComplete: "AI analysis finished",
-      analysisError: (error: string) => `AI analysis failed: ${error}`,
-      cashDetected: (confidence: number) =>
-        `Cash detection: cash detected (confidence ${(confidence * 100).toFixed(1)}%)`,
-      cashClear: (confidence: number) =>
-        `Cash detection: no cash found (confidence ${(confidence * 100).toFixed(1)}%)`,
-      faceEmployee: (similarity: number, name?: string) =>
-        `Face recognition: matched employee${name ? ` ${name}` : ""} (similarity ${(similarity * 100).toFixed(1)}%)`,
-      faceVisitor: (similarity: number) =>
-        `Face recognition: visitor detected (similarity ${(similarity * 100).toFixed(1)}%)`,
-      behaviorSummary: (actions: string[]) => `Behavior analysis: ${actions.join(" / ")}`,
-      objectSummary: (count: number) => `Object detection: ${count} target(s) identified`,
-      alertRaised: (message: string) => `⚠️ Alert: ${message}`,
-    },
-    alert: {
-      bannerTitle: "⚠️ Alert: Internal Cash Transaction",
-      bannerDescription: (name?: string) =>
-        `Detected a possible cash transaction by employee ${name ?? "Unknown"}. Please verify immediately.`,
-    },
-  },
 }
 
 function createFallbackAnalysis(): AnalysisResponse {
@@ -563,7 +448,7 @@ function formatLogEntry(entry: LogEntry, language: Language) {
 }
 
 export default function Page() {
-  const [language, setLanguage] = useState<Language>("zh")
+  const language: Language = "zh"
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -688,24 +573,21 @@ export default function Page() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className={`rounded-xl bg-card/40 p-4 shadow-sm transition-all ${shouldAlert ? "animate-alert-surface border border-destructive/40" : "border border-border"}`}>
-            <h1 className={`mb-2 text-3xl font-bold tracking-tight sm:text-4xl ${shouldAlert ? "text-destructive" : "text-foreground"}`}>
-              {ui.title}
-            </h1>
-            <p className={`text-base sm:text-lg ${shouldAlert ? "text-destructive/80" : "text-muted-foreground"}`}>{ui.subtitle}</p>
-          </div>
-          <Button
-            variant="outline"
-            className="h-10 self-end border-primary/40 text-primary hover:bg-primary/10"
-            onClick={() => setLanguage((prev) => (prev === "zh" ? "en" : "zh"))}
-          >
-            <Languages className="mr-2 h-4 w-4" />
-            {ui.languageToggle}
-          </Button>
-        </header>
+    <div className="min-h-screen overflow-x-hidden bg-background">
+      <main className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex flex-1 flex-col">
+          <header className="mb-6">
+            <div
+              className={`rounded-xl bg-card/40 p-4 shadow-sm transition-all ${shouldAlert ? "animate-alert-surface border border-destructive/40" : "border border-border"}`}
+            >
+              <h1
+                className={`mb-2 text-3xl font-bold tracking-tight sm:text-4xl ${shouldAlert ? "text-destructive" : "text-foreground"}`}
+              >
+                {ui.title}
+              </h1>
+              <p className={`text-base sm:text-lg ${shouldAlert ? "text-destructive/80" : "text-muted-foreground"}`}>{ui.subtitle}</p>
+            </div>
+          </header>
 
         {shouldAlert && results && (
           <div className="mb-6 rounded-lg border-2 border-destructive bg-destructive/10 p-4 shadow-lg animate-alert-ring">
@@ -721,7 +603,7 @@ export default function Page() {
           </div>
         )}
 
-        <div className="mb-8">
+        <div className="mb-6">
           <SingleVideoUpload
             videoUrl={videoUrl}
             analyzing={isAnalyzing}
@@ -733,8 +615,8 @@ export default function Page() {
         </div>
 
         {results && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-xl font-semibold text-foreground">{ui.results.heading}</h2>
+          <div className="mb-6">
+            <h2 className="mb-3 text-xl font-semibold text-foreground">{ui.results.heading}</h2>
             <MultiResultsDisplay results={results} copy={ui.results} shouldAlert={shouldAlert} />
           </div>
         )}
@@ -746,18 +628,18 @@ export default function Page() {
           rawJsonLabel={ui.systemLog.rawJsonLabel}
           timelineLabel={ui.systemLog.timelineLabel}
           emptyLabel={ui.systemLog.empty}
-          language={language}
           formatLogEntry={(entry) => formatLogEntry(entry, language)}
           frameSampling={results?.frame_sampling ?? null}
           samplingHeading={ui.systemLog.samplingLabel}
           samplingEmptyLabel={ui.systemLog.samplingEmpty}
           samplingItems={ui.systemLog.samplingItems}
         />
+        </div>
 
-        <footer className="mt-12 border-t border-border pt-6 text-center text-sm text-muted-foreground">
+        <footer className="mt-8 border-t border-border pt-5 text-center text-sm text-muted-foreground">
           © 2025 · 柜台现金交易监控告警系统
         </footer>
-      </div>
+      </main>
     </div>
   )
 }

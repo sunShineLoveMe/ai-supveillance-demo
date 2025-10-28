@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ChevronDown, ChevronUp, Terminal } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-import type { FrameSamplingMeta, Language, LogEntry } from "@/app/page"
+import type { FrameSamplingMeta, LogEntry } from "@/app/page"
 
 interface SystemLogProps {
   logs: LogEntry[]
@@ -16,7 +16,6 @@ interface SystemLogProps {
   rawJsonLabel: string
   timelineLabel: string
   emptyLabel: string
-  language: Language
   formatLogEntry: (entry: LogEntry) => string
   frameSampling?: FrameSamplingMeta | null
   samplingHeading: string
@@ -38,7 +37,6 @@ export function SystemLog({
   rawJsonLabel,
   timelineLabel,
   emptyLabel,
-  language,
   formatLogEntry,
   frameSampling,
   samplingHeading,
@@ -49,7 +47,7 @@ export function SystemLog({
 
   const dateFormatter = useMemo(
     () =>
-      new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
+      new Intl.DateTimeFormat("zh-CN", {
         hour12: false,
         year: "numeric",
         month: "2-digit",
@@ -58,22 +56,22 @@ export function SystemLog({
         minute: "2-digit",
         second: "2-digit",
       }),
-    [language],
+    [],
   )
   const numberFormatter = useMemo(
     () =>
-      new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US", {
+      new Intl.NumberFormat("zh-CN", {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
       }),
-    [language],
+    [],
   )
 
   const orderedLogs = useMemo(() => [...logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), [logs])
   const hasJson = rawJson.trim().length > 0
   const samplingData = frameSampling ?? null
-  const frameUnit = language === "zh" ? "帧" : "frames"
-  const durationUnit = language === "zh" ? "秒" : "s"
+  const frameUnit = "帧"
+  const durationUnit = "秒"
 
   return (
     <Card className="border-border bg-card shadow-sm">

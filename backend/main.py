@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,8 +15,9 @@ import numpy as np
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from inference import get_model
 from ultralytics import YOLO
+
+import paho.mqtt.client as mqtt
 
 APP_TITLE = "AI Smart Counter Monitor Backend"
 APP_VERSION = "1.0.0"
@@ -24,11 +26,51 @@ MAX_SAMPLED_FRAMES = int(os.getenv("MAX_SAMPLED_FRAMES", "24"))
 FRAME_SAMPLE_INTERVAL_SECONDS = float(os.getenv("FRAME_SAMPLE_INTERVAL_SECONDS", "0.5"))
 YOLO_WEIGHTS_PATH = os.getenv("YOLO_WEIGHTS", "yolov8n.pt")
 CASH_CONFIDENCE_ALERT_THRESHOLD = float(os.getenv("CASH_CONFIDENCE_THRESHOLD", "0.3"))
-ROBOFLOW_MODEL_ID = os.getenv("ROBOFLOW_MODEL_ID", "currency-deteection-pq4mu/1")
-ROBOFLOW_API_KEY = os.getenv("ROBOFLOW_API_KEY")
-ROBOFLOW_CONFIDENCE = float(os.getenv("ROBOFLOW_CONFIDENCE", "0.08"))
-ROBOFLOW_IOU = float(os.getenv("ROBOFLOW_IOU", "0.1"))
-ROBOFLOW_CASH_PREFIX = os.getenv("ROBOFLOW_CASH_PREFIX", "chinese yuan").lower()
+CASH_MODEL_PATH_ENV = os.getenv("LOCAL_CASH_MODEL_PATH") or os.getenv("CASH_MODEL_PATH")
+CASH_MODEL_PATH = (
+    Path(CASH_MODEL_PATH_ENV)
+    if CASH_MODEL_PATH_ENV
+    else Path(os.getenv("DEFAULT_CASH_MODEL_PATH", "cash_detector.pt"))
+)
+CASH_MODEL_CONFIDENCE = float(
+    os.getenv("CASH_MODEL_CONFIDENCE")
+    or os.getenv("ROBOFLOW_CONFIDENCE")
+    or "0.25"
+)
+CASH_MODEL_IOU = float(os.getenv("CASH_MODEL_IOU") or os.getenv("ROBOFLOW_IOU") or "0.45")
+CASH_ALLOWED_PREFIX = (
+    os.getenv("CASH_ALLOWED_PREFIX")
+    or os.getenv("ROBOFLOW_CASH_PREFIX", "")
+).strip().lower()
+CASH_ALLOWED_LABELS = [
+    item.strip().lower()
+    for item in os.getenv("CASH_ALLOWED_LABELS", "").split(",")
+    if item.strip()
+]
+CASH_DISPLAY_LABEL = os.getenv("CASH_DISPLAY_LABEL", "现金")
+DEFAULT_CASH_LABEL_KEYWORDS = {
+    "cash",
+    "cashmoney",
+    "cash_note",
+    "cashnote",
+    "currency",
+    "currency_note",
+    "money",
+    "paper_money",
+    "paper-money",
+    "banknote",
+    "bank_note",
+    "bank-note",
+    "bill",
+    "cash/bill",
+    "现金",
+    "钞票",
+    "纸币",
+    "人民币",
+    "cny",
+    "rmb",
+    "yuan",
+}
 
 EMPLOYEE_GALLERY_DIR = Path(
     os.getenv("EMPLOYEE_GALLERY_DIR", Path(__file__).parent / "employee_gallery")
@@ -36,10 +78,29 @@ EMPLOYEE_GALLERY_DIR = Path(
 EMPLOYEE_REGISTRY_FILE = Path(
     os.getenv("EMPLOYEE_REGISTRY_FILE", EMPLOYEE_GALLERY_DIR / "registry.json")
 )
-EMPLOYEE_SIMILARITY_THRESHOLD = float(os.getenv("EMPLOYEE_SIMILARITY_THRESHOLD", "0.32"))
+EMPLOYEE_SIMILARITY_THRESHOLD = float(os.getenv("EMPLOYEE_SIMILARITY_THRESHOLD", "0.2"))
 EMPLOYEE_MIN_KEYPOINTS = int(os.getenv("EMPLOYEE_MIN_KEYPOINTS", "10"))
 EMPLOYEE_DISTANCE_THRESHOLD = float(os.getenv("EMPLOYEE_DISTANCE_THRESHOLD", "60"))
 EMPLOYEE_MAX_FEATURES = int(os.getenv("EMPLOYEE_MAX_FEATURES", "512"))
+
+MQTT_ENABLED = os.getenv("MQTT_ENABLED", "1").strip().lower() not in {"0", "false", "off"}
+MQTT_BROKER = os.getenv("MQTT_BROKER", "124.71.167.89")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "8087"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "lanbao")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "lanbao")
+MQTT_TOPIC = os.getenv(
+    "MQTT_TOPIC", "/edge/mqtt/d5f9610f-986e-4913-a3e0-696fa8ee2123/rtg"
+)
+MQTT_PROTOCOL = mqtt.MQTTv311
+MQTT_DEVICE_ID = os.getenv("MQTT_DEVICE_ID", "device_1")
+MQTT_PRIMARY_KEY = os.getenv("MQTT_PRIMARY_KEY", "mqtt")
+MQTT_SERIAL_NUMBER = os.getenv(
+    "MQTT_SERIAL_NUMBER", "d5f9610f-986e-4913-a3e0-696fa8ee2123"
+)
+MQTT_VERSION = os.getenv("MQTT_VERSION", "2.0.0")
+MQTT_ALARM_CODE = os.getenv("MQTT_ALARM_CODE", "z_alarm_01")
+MQTT_SNAPSHOT_URL = os.getenv("MQTT_SNAPSHOT_URL")
+MQTT_KEEPALIVE = int(os.getenv("MQTT_KEEPALIVE", "60"))
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -53,15 +114,128 @@ def _load_yolo_model() -> YOLO:
     return YOLO(str(weights_path))
 
 
-def _load_cash_model():
-    if not ROBOFLOW_API_KEY:
-        raise RuntimeError("ROBOFLOW_API_KEY 环境变量未配置，无法加载现金检测模型")
-    return get_model(model_id=ROBOFLOW_MODEL_ID, api_key=ROBOFLOW_API_KEY)
+def _resolve_cash_model_path(raw_path: Path) -> Optional[Path]:
+    """Resolve the configured cash model path with several fallbacks."""
+
+    candidates = []
+
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    else:
+        candidates.extend(
+            [
+                raw_path,
+                Path(__file__).parent / raw_path,
+                Path(__file__).parent.parent / raw_path,
+            ]
+        )
+
+        model_name = raw_path.name
+        candidates.extend(
+            [
+                Path(__file__).parent / "models" / model_name,
+                Path(__file__).parent.parent / "models" / model_name,
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def _load_cash_model() -> YOLO:
+    global CASH_MODEL_PATH
+
+    weights_path = _resolve_cash_model_path(CASH_MODEL_PATH) or CASH_MODEL_PATH
+
+    if not weights_path.exists():
+        raise RuntimeError(
+            "未找到本地现金检测模型权重文件，请设置 LOCAL_CASH_MODEL_PATH 或 DEFAULT_CASH_MODEL_PATH"
+        )
+
+    CASH_MODEL_PATH = weights_path
+    return YOLO(str(weights_path))
+
+
+def _normalize_label(label: str) -> str:
+    return label.strip().lower()
+
+
+def _is_cash_like_label(label: str) -> bool:
+    normalized = _normalize_label(label)
+    compact = normalized.replace(" ", "").replace("_", "").replace("-", "")
+    for keyword in DEFAULT_CASH_LABEL_KEYWORDS:
+        keyword_norm = keyword.lower()
+        keyword_compact = keyword_norm.replace(" ", "").replace("_", "").replace("-", "")
+        if keyword_norm in normalized or keyword_compact in compact:
+            return True
+    return False
+
+
+def _build_mqtt_payload(timestamp: Optional[int] = None) -> Dict[str, Any]:
+    payload_timestamp = int(timestamp or time.time())
+    measurements: Dict[str, Any] = {"m": MQTT_ALARM_CODE, "v": 1}
+    if MQTT_SNAPSHOT_URL:
+        measurements["url"] = MQTT_SNAPSHOT_URL
+
+    device_payload: Dict[str, Any] = {
+        "d": [measurements],
+        "dev": MQTT_DEVICE_ID,
+    }
+
+    return {
+        "devs": [device_payload],
+        "pKey": MQTT_PRIMARY_KEY,
+        "sn": MQTT_SERIAL_NUMBER,
+        "ts": payload_timestamp,
+        "ver": MQTT_VERSION,
+    }
+
+
+def _publish_mqtt_alert() -> None:
+    if not MQTT_ENABLED:
+        return
+
+    payload = _build_mqtt_payload()
+    client = mqtt.Client(protocol=MQTT_PROTOCOL)
+
+    if MQTT_USERNAME or MQTT_PASSWORD:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    loop_started = False
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE)
+        client.loop_start()
+        loop_started = True
+        result = client.publish(
+            MQTT_TOPIC,
+            json.dumps(payload, ensure_ascii=False),
+        )
+        result.wait_for_publish()
+        if result[0] != mqtt.MQTT_ERR_SUCCESS:
+            logger.error(
+                "MQTT 报警消息发送失败: topic=%s, result_code=%s",
+                MQTT_TOPIC,
+                result[0],
+            )
+        else:
+            logger.info("已发送 MQTT 报警: topic=%s, payload=%s", MQTT_TOPIC, payload)
+    except Exception:
+        logger.exception("MQTT 报警发送异常")
+    finally:
+        try:
+            if loop_started:
+                client.loop_stop()
+            client.disconnect()
+        except Exception:  # pragma: no cover - disconnect best effort
+            logger.debug("MQTT 客户端断开连接时出现问题", exc_info=True)
 
 
 yolo_model: Optional[YOLO] = None
 yolo_class_names: Dict[int, str] = {}
-cash_model: Any | None = None
+cash_model: Optional[YOLO] = None
 cash_class_names: Dict[int, str] = {}
 cash_allowed_ids: List[int] = []
 
@@ -341,20 +515,54 @@ def startup_event() -> None:
 
     if cash_model is None:
         cash_model = _load_cash_model()
-        names = getattr(cash_model, "class_names", None) or {}
-        # roboflow inference models expose class names as a dict keyed by index
-        cash_class_names = {int(idx): name for idx, name in names.items()} if isinstance(names, dict) else {}
-        cash_allowed_ids = [
-            idx for idx, name in cash_class_names.items() if str(name).lower().startswith(ROBOFLOW_CASH_PREFIX)
-        ]
-        if not cash_allowed_ids and cash_class_names:
-            cash_allowed_ids = list(cash_class_names.keys())
+        names_source = (
+            getattr(getattr(cash_model, "model", None), "names", None)
+            or getattr(cash_model, "names", None)
+            or {}
+        )
+        if isinstance(names_source, dict):
+            cash_class_names = {int(idx): str(name) for idx, name in names_source.items()}
+        elif isinstance(names_source, (list, tuple)):
+            cash_class_names = {idx: str(name) for idx, name in enumerate(names_source)}
+        else:
+            cash_class_names = {}
+
+        allowed_ids: List[int] = []
+        if CASH_ALLOWED_LABELS:
+            allowed_ids = [
+                idx
+                for idx, name in cash_class_names.items()
+                if _normalize_label(str(name)) in CASH_ALLOWED_LABELS
+            ]
+        elif CASH_ALLOWED_PREFIX:
+            allowed_ids = [
+                idx
+                for idx, name in cash_class_names.items()
+                if _normalize_label(str(name)).startswith(CASH_ALLOWED_PREFIX)
+            ]
+
+        if not allowed_ids and cash_class_names:
+            auto_cash_ids = [
+                idx
+                for idx, name in cash_class_names.items()
+                if _is_cash_like_label(name)
+            ]
+            if auto_cash_ids:
+                allowed_ids = auto_cash_ids
+
+        if not allowed_ids and cash_class_names:
+            logger.warning(
+                "现金检测模型未匹配到现金类别，已禁用所有类别，需要通过环境变量显式设置"
+            )
+
+        cash_allowed_ids = allowed_ids
+
         logger.info(
-            "已加载 Roboflow 现金检测模型: model_id=%s, allowed_class_ids=%s, confidence>=%.2f, iou>=%.2f",
-            getattr(cash_model, "model_id", ROBOFLOW_MODEL_ID),
-            cash_allowed_ids,
-            ROBOFLOW_CONFIDENCE,
-            ROBOFLOW_IOU,
+            "已加载本地现金检测模型: weights=%s, allowed_class_ids=%s, confidence>=%.2f, iou>=%.2f",
+            str(CASH_MODEL_PATH),
+            cash_allowed_ids or "无",
+            CASH_MODEL_CONFIDENCE,
+            CASH_MODEL_IOU,
         )
 
     if not employee_profiles:
@@ -377,8 +585,14 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
+    cash_detected_flag = bool(analysis.get("cash_detected"))
+    if not cash_detected_flag:
+        cash_detected_flag = any(
+            frame.get("contains_cash") for frame in analysis.get("cash_keyframes", [])
+        )
+
     response_payload = {
-        "cash_transaction": bool(analysis["cash_keyframes"]),
+        "cash_transaction": cash_detected_flag,
         "cash_confidence": analysis["cash_confidence"],
         "internal_employee": analysis["internal_employee"],
         "face_similarity": analysis["face_similarity"],
@@ -395,75 +609,22 @@ async def analyze_video(file: UploadFile = File(...)) -> JSONResponse:
         "employee_match_score": analysis.get("employee_match_score"),
     }
 
+    if cash_detected_flag and analysis.get("internal_employee"):
+        _publish_mqtt_alert()
+
     return JSONResponse(response_payload)
-
-
-def _normalize_prediction(pred: Any) -> Dict[str, Any]:
-    """Convert Roboflow/ObjectDetection predictions into a dictionary."""
-
-    if isinstance(pred, dict):
-        return pred
-
-    for attr in ("model_dump", "dict"):
-        method = getattr(pred, attr, None)
-        if callable(method):
-            try:
-                data = method()
-            except Exception:  # pragma: no cover - defensive against SDK changes
-                data = None
-            if isinstance(data, dict):
-                return data
-
-    data: Dict[str, Any] = {}
-
-    def _copy_attr(target_key: str, *source_keys: str) -> None:
-        for key in source_keys:
-            if hasattr(pred, key):
-                value = getattr(pred, key)
-                if value is not None:
-                    data[target_key] = value
-                    return
-
-    _copy_attr("class_id", "class_id", "classId", "classID")
-    _copy_attr("class", "class_name", "className", "class_label", "class_label_name", "class_", "class")
-    _copy_attr("confidence", "confidence", "score", "probability")
-    _copy_attr("x", "x", "x_center", "xc")
-    _copy_attr("y", "y", "y_center", "yc")
-    _copy_attr("width", "width", "w")
-    _copy_attr("height", "height", "h")
-
-    bbox = getattr(pred, "bounding_box", None) or getattr(pred, "bbox", None)
-    if bbox is not None:
-        bbox_dict: Dict[str, Any] | None = None
-        if isinstance(bbox, dict):
-            bbox_dict = bbox
-        else:
-            for attr in ("model_dump", "dict"):
-                method = getattr(bbox, attr, None)
-                if callable(method):
-                    try:
-                        bbox_dict = method()
-                    except Exception:  # pragma: no cover - defensive
-                        bbox_dict = None
-                    if isinstance(bbox_dict, dict):
-                        break
-        if isinstance(bbox_dict, dict):
-            data.setdefault("x", bbox_dict.get("x") or bbox_dict.get("x_center"))
-            data.setdefault("y", bbox_dict.get("y") or bbox_dict.get("y_center"))
-            data.setdefault("width", bbox_dict.get("width"))
-            data.setdefault("height", bbox_dict.get("height"))
-
-    return data
 
 
 def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     assert cash_model is not None, "现金检测模型未初始化"
     assert yolo_model is not None, "YOLO 模型未初始化"
+    cash_detector = cash_model
+    employee_detector = yolo_model
 
     logger.info(
         "开始分析视频: %s | 现金模型=%s | YOLO权重=%s",
         video_path,
-        getattr(cash_model, "model_id", ROBOFLOW_MODEL_ID),
+        str(CASH_MODEL_PATH),
         YOLO_WEIGHTS_PATH,
     )
 
@@ -502,21 +663,16 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         frame_height, frame_width = frame.shape[:2]
 
         try:
-            inference_results = cash_model.infer(
+            cash_results = cash_detector.predict(
                 frame,
-                confidence=ROBOFLOW_CONFIDENCE,
-                iou_threshold=ROBOFLOW_IOU,
-            )[0]
+                conf=CASH_MODEL_CONFIDENCE,
+                iou=CASH_MODEL_IOU,
+                verbose=False,
+            )
         except Exception as exc:  # pragma: no cover - defensive guard against API issues
             capture.release()
             raise RuntimeError("现金检测模型推理失败") from exc
 
-        if isinstance(inference_results, dict):
-            predictions = inference_results.get("predictions", [])
-        else:
-            predictions = getattr(inference_results, "predictions", [])
-        if not isinstance(predictions, list):
-            predictions = []
         detections: List[Dict[str, Any]] = []
         annotated_frame = frame.copy()
         face_annotated_frame = frame.copy()
@@ -524,55 +680,76 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         frame_has_employee = False
         face_detections: List[Dict[str, Any]] = []
 
-        for pred in predictions:
-            pred_data = _normalize_prediction(pred)
-            try:
-                class_id = int(pred_data.get("class_id", -1))
-            except (TypeError, ValueError):
-                class_id = -1
+        if cash_results:
+            cash_result = cash_results[0]
+            boxes = getattr(cash_result, "boxes", None)
+            if boxes is not None:
+                xyxy = getattr(boxes, "xyxy", None)
+                confidences = getattr(boxes, "conf", None)
+                classes = getattr(boxes, "cls", None)
+                if xyxy is not None and confidences is not None and classes is not None:
+                    coords_list = xyxy.tolist()  # type: ignore[union-attr]
+                    conf_list = confidences.tolist()  # type: ignore[union-attr]
+                    class_list = classes.tolist()  # type: ignore[union-attr]
+                    for idx, coords in enumerate(coords_list):
+                        class_id = int(class_list[idx])
+                        label_raw = cash_class_names.get(class_id, str(class_id))
+                        is_cash_candidate = False
+                        if cash_allowed_ids:
+                            is_cash_candidate = class_id in cash_allowed_ids
+                        else:
+                            is_cash_candidate = _is_cash_like_label(label_raw)
 
-            label = cash_class_names.get(class_id, pred_data.get("class", str(class_id)))
-            confidence = float(pred_data.get("confidence", 0.0) or 0.0)
+                        display_label = (
+                            CASH_DISPLAY_LABEL if is_cash_candidate and CASH_DISPLAY_LABEL else label_raw
+                        )
+                        confidence = float(conf_list[idx])
 
-            if cash_allowed_ids and class_id not in cash_allowed_ids:
-                continue
+                        x1, y1, x2, y2 = [max(int(coord), 0) for coord in coords]
+                        x2 = min(x2, frame_width - 1)
+                        y2 = min(y2, frame_height - 1)
 
-            x_center = float(pred_data.get("x", 0.0) or 0.0)
-            y_center = float(pred_data.get("y", 0.0) or 0.0)
-            width = float(pred_data.get("width", 0.0) or 0.0)
-            height = float(pred_data.get("height", 0.0) or 0.0)
+                        detection_payload: Dict[str, Any] = {
+                            "label": display_label,
+                            "confidence": round(confidence, 4),
+                            "box": [x1, y1, x2, y2],
+                        }
+                        if label_raw != display_label:
+                            detection_payload["raw_label"] = label_raw
+                        detection_payload["is_cash"] = is_cash_candidate
 
-            x1 = max(int(x_center - width / 2), 0)
-            y1 = max(int(y_center - height / 2), 0)
-            x2 = min(int(x_center + width / 2), frame_width - 1)
-            y2 = min(int(y_center + height / 2), frame_height - 1)
+                        detections.append(detection_payload)
 
-            detections.append(
-                {
-                    "label": label,
-                    "confidence": round(confidence, 4),
-                    "box": [x1, y1, x2, y2],
-                }
-            )
+                        color = (0, 0, 255) if is_cash_candidate else (64, 156, 255)
+                        annotation_label = label_raw or display_label
+                        if not annotation_label or not annotation_label.isascii():
+                            candidate_label = display_label if display_label and display_label.isascii() else "cash"
+                            annotation_label = candidate_label
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                        cv2.putText(
+                            annotated_frame,
+                            f"{annotation_label} {confidence:.2f}",
+                            (x1, max(y1 - 10, 0)),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5,
+                            color,
+                            2,
+                        )
 
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
-            cv2.putText(
-                annotated_frame,
-                f"{label} {confidence:.2f}",
-                (x1, max(y1 - 10, 0)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 255, 255),
-                2,
-            )
+                        collected_objects[display_label] = max(
+                            confidence, collected_objects.get(display_label, 0.0)
+                        )
+                        if is_cash_candidate:
+                            highest_cash_conf = max(highest_cash_conf, confidence)
+                            collected_objects["Cash / 现金"] = max(
+                                confidence, collected_objects.get("Cash / 现金", 0.0)
+                            )
+                            frame_has_cash = True
+                            cash_detected = True
 
-            highest_cash_conf = max(highest_cash_conf, confidence)
-            collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
-            collected_objects["Cash / 现金"] = max(confidence, collected_objects.get("Cash / 现金", 0.0))
-            frame_has_cash = True
 
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        yolo_results = yolo_model.predict(frame_rgb, verbose=False)[0]
+        yolo_results = employee_detector.predict(frame_rgb, verbose=False)[0]
         for box in yolo_results.boxes:
             cls_id = int(box.cls)
             confidence = float(box.conf)
@@ -650,7 +827,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
             if lower_label in {"person", "hand", "face"}:
                 collected_objects[label] = max(confidence, collected_objects.get(label, 0.0))
 
-        if frame_has_cash and detections:
+        if detections:
             _, buffer = cv2.imencode(".jpg", annotated_frame)
             frame_b64 = base64.b64encode(buffer).decode("utf-8")
             timestamp_ms = int((frame_index / fps) * 1000) if fps else 0
@@ -661,9 +838,9 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
                     "mime_type": "image/jpeg",
                     "image_base64": frame_b64,
                     "detections": detections,
+                    "contains_cash": frame_has_cash,
                 }
             )
-            cash_detected = True
 
         if frame_has_employee and face_detections:
             _, face_buffer = cv2.imencode(".jpg", face_annotated_frame)
@@ -697,8 +874,6 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
 
     capture.release()
 
-    cash_detected = cash_detected or bool(sampled_frames)
-
     if cash_detected:
         boosted_cash_conf = max(0.95, highest_cash_conf, collected_objects.get("Cash / 现金", 0.0))
         collected_objects["Cash / 现金"] = boosted_cash_conf
@@ -706,7 +881,8 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
     objects_sorted = sorted(collected_objects.items(), key=lambda kv: kv[1], reverse=True)
     top_objects = [f"{label} ({conf:.0%})" for label, conf in objects_sorted[:6]]
 
-    behavior_confidence = 0.6 + 0.2 * min(len(sampled_frames) / max(processed_frames or 1, 1), 1)
+    cash_frame_count = sum(1 for frame in sampled_frames if frame.get("contains_cash"))
+    behavior_confidence = 0.6 + 0.2 * min(cash_frame_count / max(processed_frames or 1, 1), 1)
     object_confidence = objects_sorted[0][1] if objects_sorted else 0.4
 
     base_cash_conf = highest_cash_conf or (0.12 if cash_detected else 0.05)
@@ -714,7 +890,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         base_cash_conf = max(base_cash_conf, min(0.98, 0.65 + 0.35 * (highest_cash_conf or 0.5)))
 
     if best_employee_similarity > 0:
-        face_similarity = min(0.2 + best_employee_similarity * 0.75, 0.98)
+        face_similarity = min(max(best_employee_similarity, 0.0), 0.99)
     else:
         face_similarity = min(0.18 + 0.4 * min(highest_face_conf, 1.0), 0.45)
     internal_employee = best_employee_similarity >= EMPLOYEE_SIMILARITY_THRESHOLD
@@ -724,7 +900,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         "cash_confidence": round(base_cash_conf, 4),
         "cash_keyframes": sampled_frames,
         "employee_keyframes": employee_keyframes,
-        "actions": _derive_actions(cash_detected, len(sampled_frames)),
+        "actions": _derive_actions(cash_detected, cash_frame_count),
         "objects": top_objects,
         "behavior_confidence": round(min(behavior_confidence, 0.95), 4),
         "object_confidence": round(max(object_confidence, 0.35), 4),
@@ -732,6 +908,7 @@ def _run_cash_detection(video_path: Path) -> Dict[str, Any]:
         "face_similarity": round(face_similarity, 4),
         "employee_name": matched_employee_name,
         "employee_match_score": round(best_employee_similarity, 4),
+        "cash_detected": cash_detected,
         "alert": False,
         "alert_message": None,
         "frame_sampling": {

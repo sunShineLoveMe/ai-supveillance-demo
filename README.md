@@ -9,7 +9,7 @@ AI 智能柜台监控 Demo 系统是一个基于 **Next.js + Tailwind CSS + Radi
 - [Radix UI](https://www.radix-ui.com/) + [ShadCN UI 组件库](https://ui.shadcn.com/)
 - [Lucide Icons](https://lucide.dev/) 图标
 - Next.js API Route 代理后端 FastAPI 服务
-- [FastAPI](https://fastapi.tiangolo.com/) + [Roboflow Inference](https://roboflow.com/) 现金检测推理后端（结合 YOLOv8n 辅助人脸/人员识别）
+- [FastAPI](https://fastapi.tiangolo.com/) + 本地训练的 Ultralytics YOLO 现金检测模型（结合 YOLOv8n 辅助人脸/人员识别）
 
 ## 目录结构
 ```
@@ -24,7 +24,7 @@ components/
   system-log.tsx              # 可折叠系统日志，展示原始 JSON 和事件时间线
   ui/                         # ShadCN UI 组件集合
 backend/
-  main.py                     # FastAPI 服务（Roboflow 现金检测 + YOLOv8n 人脸/人员识别）
+  main.py                     # FastAPI 服务（本地现金检测 YOLO 模型 + YOLOv8n 人脸/人员识别）
   requirements.txt            # Python 依赖列表
 public/
 styles/
@@ -37,9 +37,10 @@ styles/
   - 现金交易检测：Radix Progress 显示概率，并根据阈值展示不同状态标签，同时在分析摘要中合并展示 "Cash / 现金" 置信度。
   - 员工人脸识别：显示匹配度与匹配员工信息。
   - 行为分析：列表化展示检测到的行为，并提供置信度条。
-  - 物体检测：展示识别到的目标标签与识别置信度，并对现金相关标签以黄色圆角徽标强调。
-- 🖼️ **现金与员工关键帧回放**：FastAPI 调用 Roboflow 现金交易微调模型逐帧识别人民币并以黄色框高亮，同时并行使用 YOLOv8n 抓取人员/人脸信息，前端左侧展示疑似现金关键帧，右侧展示疑似员工关键帧，均支持点击缩略图放大查看检测详情。
+  - 物体检测：展示识别到的目标标签与识别置信度，并对现金相关标签以醒目的圆角徽标强调。
+- 🖼️ **现金与员工关键帧回放**：FastAPI 调用本地现金交易 YOLO 模型逐帧识别人民币并以红色框高亮，同时并行使用 YOLOv8n 抓取人员/人脸信息；若模型输出非现金标签（如手机），也会以蓝色框与原始标签显示供复核。前端左侧展示关键帧缩略图，右侧展示疑似员工关键帧，均支持点击放大查看详情。
 - 🚨 **智能告警**：当现金概率 ≥ 0.9 且员工相似度 ≥ 0.85 时，标题区与相关卡片触发红色闪烁动画，并弹出告警横幅。
+- 📡 **MQTT 报警推送**：一旦同时识别出内部员工与现金交易，会通过可配置的 MQTT v3.1.1 服务器推送报警 JSON 负载，供线下系统联动。
 - 📝 **系统日志**：可折叠区域展示 AI 返回的原始 JSON 以及按时间排序的事件日志，支持中英文切换。
 - 🌐 **多语言支持**：所有界面文案支持中英文一键切换。
 
@@ -58,8 +59,28 @@ styles/
    python -m venv .venv
    source .venv/bin/activate  # Windows 使用 .venv\\Scripts\\activate
    pip install -r backend/requirements.txt
-   export ROBOFLOW_API_KEY="<你的 Roboflow API Key>"
-   # 可选：export ROBOFLOW_MODEL_ID="currency-deteection-pq4mu/1"
+   # 将现金检测模型 (cash_detector.pt) 放在项目根目录或 backend/ 目录的 models/ 下即可自动识别
+   # 若放在其他位置，可通过环境变量手动指定：
+   export LOCAL_CASH_MODEL_PATH="/absolute/path/to/your/cash_detector.pt"
+   # 若模型的类别名称不包含“cash/现金”关键字，可通过以下方式限定或重命名展示标签：
+   # export CASH_ALLOWED_LABELS="cash,现金"
+   # export CASH_ALLOWED_PREFIX="cash"
+   # export CASH_DISPLAY_LABEL="现金"
+   # 可选：自定义阈值（默认 0.25 / 0.45）
+   # export CASH_MODEL_CONFIDENCE="0.25"
+   # export CASH_MODEL_IOU="0.45"
+   # 可选：配置 MQTT 报警推送（默认使用生产参数，可通过以下变量覆盖）
+   # export MQTT_ENABLED="1"
+   # export MQTT_BROKER="124.71.167.89"
+   # export MQTT_PORT="8087"
+   # export MQTT_USERNAME="lanbao"
+   # export MQTT_PASSWORD="lanbao"
+   # export MQTT_TOPIC="/edge/mqtt/d5f9610f-986e-4913-a3e0-696fa8ee2123/rtg"
+   # export MQTT_DEVICE_ID="device_1"
+   # export MQTT_PRIMARY_KEY="mqtt"
+   # export MQTT_SERIAL_NUMBER="d5f9610f-986e-4913-a3e0-696fa8ee2123"
+   # export MQTT_ALARM_CODE="z_alarm_02"
+   # export MQTT_SNAPSHOT_URL="https://example.com/optional_snapshot.jpg"
    uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 5. **配置前端代理（可选）**：
@@ -72,7 +93,8 @@ styles/
 2. 预览确认后点击「开始 AI 分析」。
 3. 等待后端返回四种检测结果，页面自动更新结果卡片与系统日志。
 4. 若触发内部员工现金交易条件，顶部会显示闪烁的红色告警提示。
-5. 打开「系统日志」可查看 AI 返回的原始 JSON 以及事件时间线。
+5. 若满足内部员工 + 现金交易条件，后台会通过 MQTT 推送报警消息（`v: 1` 表示命中）。
+6. 打开「系统日志」可查看 AI 返回的原始 JSON 以及事件时间线。
 
 ## AI 分析数据结构
 后端 `/api/analyze` 接口返回如下 JSON（示例）：
@@ -97,7 +119,7 @@ styles/
       "mime_type": "image/jpeg",
       "image_base64": "...",
       "detections": [
-        { "label": "Cash Bundle", "confidence": 0.93, "box": [12, 10, 88, 72] }
+        { "label": "现金", "confidence": 0.93, "box": [12, 10, 88, 72] }
       ]
     }
   ],
@@ -133,6 +155,33 @@ styles/
 - `employee_match_score`：后端直接返回的匹配得分（0~1），表示与员工图库的 ORB 特征匹配比例。
 - `employee_keyframes[].match` / `employee_keyframes[].detections[].match`：标注当前关键帧或检测框对应的员工姓名与匹配得分，便于对照。
 
+## MQTT 报警消息格式
+
+当同一段视频中既检测到现金交易又识别出内部员工时，后端会立即构造如下 MQTT 负载并推送至配置的主题：
+
+```json
+{
+  "devs": [
+    {
+      "d": [
+        {
+          "m": "z_alarm_02",
+          "v": 1
+        }
+      ],
+      "dev": "device_1"
+    }
+  ],
+  "pKey": "mqtt",
+  "sn": "d5f9610f-986e-4913-a3e0-696fa8ee2123",
+  "ts": 1761543000,
+  "ver": "2.0.0"
+}
+```
+
+- `v: 1` 表示命中了“内部员工 + 现金交易”的组合条件，其余情况不会发送消息。
+- 可选：通过设置 `MQTT_SNAPSHOT_URL` 环境变量，可附带一张报警截图链接，字段将自动追加至 `d[0].url`。
+
 ## 准备模拟员工人脸数据
 
 后端会在启动时从 `backend/employee_gallery` 目录读取模拟员工人脸样本，流程如下：
@@ -147,7 +196,7 @@ styles/
 3. 确保 `image` 字段与放置在目录中的文件名一致，否则后端会在启动日志中提示无法读取对应样本。
 4. 可通过环境变量覆盖默认路径或阈值：
    - `EMPLOYEE_GALLERY_DIR`：自定义图库目录；
-   - `EMPLOYEE_SIMILARITY_THRESHOLD`：匹配判定阈值（默认 0.32，已放宽以更容易命中真实员工）；
+   - `EMPLOYEE_SIMILARITY_THRESHOLD`：匹配判定阈值（默认 0.4，已放宽以更容易命中真实员工）；
    - `EMPLOYEE_MIN_KEYPOINTS` / `EMPLOYEE_DISTANCE_THRESHOLD`：ORB 特征过滤策略（默认距离阈值 60，用于纳入更多可用匹配对）。
 5. 后端启动日志会输出载入的样本列表，若目录为空则所有访客都会按外部人员处理，不再误判为内部员工。
 
@@ -157,7 +206,7 @@ styles/
 2. **YOLOv8n 抓取候选框**：每一帧会送入 YOLOv8n（COCO 权重）模型，筛选 `person` / `face` 类别，获取候选人脸/上半身的边界框。
 3. **ORB 特征提取**：依据 YOLO 的边界框截取 ROI，转换为灰度后用 ORB（`EMPLOYEE_MAX_FEATURES`）提取关键点与描述子，过滤掉特征点不足的帧。
 4. **员工图库匹配**：将 ROI 特征与 `backend/employee_gallery` 中的每个样本进行 BFMatcher（汉明距离）比对，统计距离阈值以内的有效匹配数，形成 `employee_match_score`。
-5. **相似度换算与判定**：将匹配得分映射为 0~1 的 `face_similarity`，当得分 ≥ `EMPLOYEE_SIMILARITY_THRESHOLD`（默认 0.32，可按需调整）时判定为内部员工，否则视为访客。
+5. **相似度换算与判定**：直接使用匹配得分（0~1）作为 `face_similarity`，当得分 ≥ `EMPLOYEE_SIMILARITY_THRESHOLD`（默认 0.4，可按需调整）时判定为内部员工，否则视为访客。
 6. **关键帧与日志**：命中员工样本的帧会附带 `match` 元信息写入 `employee_keyframes`，系统日志也会输出最佳匹配姓名与得分，便于复核。
 
 > 若图库为空或未命中任何样本，`internal_employee` 会保持 `false`，避免出现全部视频都被识别为内部员工的情况。
@@ -170,7 +219,7 @@ styles/
 - [x] 告警动画（标题区 & 卡片闪烁、横幅提示）
 - [x] 系统日志折叠面板（原始 JSON + 多语言时间线）
 - [x] 中英文界面切换
-- [x] FastAPI + Roboflow 现金检测推理（黄色高亮人民币）与 YOLOv8n 人员检测、关键帧抓取和前端可视化（支持关键帧放大查看）
+- [x] FastAPI + 本地 YOLO 现金检测推理（红色高亮人民币、蓝色标注其他物体）与 YOLOv8n 人员检测、关键帧抓取和前端可视化（支持关键帧放大查看）
 
 ## 后续可扩展方向
 - 集成实时 WebSocket 推送以展示持续监控结果

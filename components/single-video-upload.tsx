@@ -60,31 +60,33 @@ export function SingleVideoUpload({ videoUrl, analyzing, onFileUpload, onAnalyze
   }
 
   return (
-    <Card className="overflow-hidden border-2 border-primary/30 bg-card/60 p-6">
-      <div className="mb-6 flex flex-col gap-2 text-center">
+    <Card className="overflow-hidden border-2 border-primary/30 bg-card/60 p-5 sm:p-6">
+      <div className="mb-5 flex flex-col gap-2 text-center">
         <h2 className="text-2xl font-bold text-foreground">{copy.sectionTitle}</h2>
         <p className="text-sm text-muted-foreground">{copy.sectionDescription}</p>
       </div>
 
-      <div
-        className={`mb-6 flex aspect-video flex-col items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all ${
-          isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
-        }`}
-        onDragOver={handleDragOver}
-        onDragEnter={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        role="presentation"
-      >
-        {videoUrl ? (
-          <video src={videoUrl} className="h-full w-full object-cover" controls playsInline />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
-            <FileVideo className="h-12 w-12" />
-            <div className="text-sm font-medium">{copy.emptyPlaceholder}</div>
-            <p className="text-xs opacity-80">{copy.dropHint}</p>
-          </div>
-        )}
+      <div className="mb-5 flex w-full justify-center">
+        <div
+          className={`flex aspect-square w-full max-w-[420px] items-center justify-center overflow-hidden rounded-xl border-2 border-dashed transition-all sm:max-w-[480px] lg:max-w-[560px] ${
+            isDragging ? "border-primary bg-primary/10" : "border-border/60 bg-secondary/40"
+          }`}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          role="presentation"
+        >
+          {videoUrl ? (
+            <video src={videoUrl} className="h-full w-full object-contain" controls playsInline />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
+              <FileVideo className="h-12 w-12" />
+              <div className="text-sm font-medium">{copy.emptyPlaceholder}</div>
+              <p className="text-xs opacity-80">{copy.dropHint}</p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">

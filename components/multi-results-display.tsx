@@ -150,54 +150,74 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-semibold text-foreground">{copy.cash.keyframesTitle}</h4>
           {cashKeyframes.length ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {cashKeyframes.map((frame) => {
-                const detectionSummary = frame.detections.length
-                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
-                  : "—"
-                const imageSrc = frame.image_base64
-                  ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
-                  : null
-                const previewLabel = imageSrc ? copy.cash.viewLargerLabel : copy.cash.previewUnavailable
-                return (
-                  <figure
-                    key={`${frame.frame_index}-${frame.timestamp_ms}`}
-                    className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleOpenFrame(frame, "cash")}
-                      className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
-                      aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+            <div className="max-h-[420px] overflow-y-auto pr-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {cashKeyframes.map((frame) => {
+                  const detectionSummary = frame.detections.length
+                    ? frame.detections
+                        .map((det) => {
+                          const labelDisplay =
+                            det.raw_label && det.raw_label !== det.label
+                              ? `${det.label} (${det.raw_label})`
+                              : det.label
+                          return `${labelDisplay} ${(det.confidence * 100).toFixed(0)}%`
+                        })
+                        .join(" / ")
+                    : "—"
+                  const imageSrc = frame.image_base64
+                    ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
+                    : null
+                  const previewLabel = imageSrc ? copy.cash.viewLargerLabel : copy.cash.previewUnavailable
+                  return (
+                    <figure
+                      key={`${frame.frame_index}-${frame.timestamp_ms}`}
+                      className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
                     >
-                      {imageSrc ? (
-                        <img
-                          src={imageSrc}
-                          alt={`Cash detection frame ${frame.frame_index}`}
-                          className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
-                        />
-                      ) : (
-                        <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
-                          {copy.cash.previewUnavailable}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFrame(frame, "cash")}
+                        className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
+                        aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+                      >
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={`Cash detection frame ${frame.frame_index}`}
+                            className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
+                            {copy.cash.previewUnavailable}
+                          </div>
+                        )}
+                        {imageSrc ? (
+                          <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            {copy.cash.viewLargerLabel}
+                          </span>
+                        ) : null}
+                      </button>
+                      <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
+                        <div className="font-medium text-foreground">
+                          {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
                         </div>
-                      )}
-                      {imageSrc ? (
-                        <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                          {copy.cash.viewLargerLabel}
-                        </span>
-                      ) : null}
-                    </button>
-                    <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
-                      <div className="font-medium text-foreground">
-                        {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
-                      </div>
-                      <div className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{copy.cash.detectionsLabel}:</span> {detectionSummary}
-                      </div>
-                    </figcaption>
-                  </figure>
-                )
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{copy.cash.detectionsLabel}:</span> {detectionSummary}
+                        </div>
+                        {frame.contains_cash === false ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            未检测到现金标签，展示模型输出供参考
+                          </div>
+                        ) : null}
+                        {frame.contains_cash ? (
+                          <div className="text-[11px] font-semibold text-destructive">
+                            捕获到疑似现金标注
+                          </div>
+                        ) : null}
+                      </figcaption>
+                    </figure>
+                  )
               })}
+              </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">{copy.cash.keyframesEmpty}</p>
@@ -227,60 +247,70 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
         <div className="mt-4 space-y-2">
           <h4 className="text-sm font-semibold text-foreground">{copy.face.keyframesTitle}</h4>
           {faceKeyframes.length ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {faceKeyframes.map((frame) => {
-                const detectionSummary = frame.detections.length
-                  ? frame.detections.map((det) => `${det.label} ${(det.confidence * 100).toFixed(0)}%`).join(" / ")
-                  : "—"
-                const matchSummary = frame.match
-                  ? `${frame.match.name ?? copy.face.matchUnknownLabel} · ${(frame.match.similarity * 100).toFixed(1)}%`
-                  : copy.face.matchUnknownLabel
-                const imageSrc = frame.image_base64
-                  ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
-                  : null
-                const previewLabel = imageSrc ? copy.face.viewLargerLabel : copy.face.previewUnavailable
-                return (
-                  <figure
-                    key={`face-${frame.frame_index}-${frame.timestamp_ms}`}
-                    className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleOpenFrame(frame, "face")}
-                      className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
-                      aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+            <div className="max-h-[420px] overflow-y-auto pr-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {faceKeyframes.map((frame) => {
+                  const detectionSummary = frame.detections.length
+                    ? frame.detections
+                        .map((det) => {
+                          const labelDisplay =
+                            det.raw_label && det.raw_label !== det.label
+                              ? `${det.label} (${det.raw_label})`
+                              : det.label
+                          return `${labelDisplay} ${(det.confidence * 100).toFixed(0)}%`
+                        })
+                        .join(" / ")
+                    : "—"
+                  const matchSummary = frame.match
+                    ? `${frame.match.name ?? copy.face.matchUnknownLabel} · ${(frame.match.similarity * 100).toFixed(1)}%`
+                    : copy.face.matchUnknownLabel
+                  const imageSrc = frame.image_base64
+                    ? `data:${frame.mime_type ?? "image/jpeg"};base64,${frame.image_base64}`
+                    : null
+                  const previewLabel = imageSrc ? copy.face.viewLargerLabel : copy.face.previewUnavailable
+                  return (
+                    <figure
+                      key={`face-${frame.frame_index}-${frame.timestamp_ms}`}
+                      className="group overflow-hidden rounded-lg border border-border/40 bg-background/60 shadow-sm"
                     >
-                      {imageSrc ? (
-                        <img
-                          src={imageSrc}
-                          alt={`Employee detection frame ${frame.frame_index}`}
-                          className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
-                        />
-                      ) : (
-                        <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
-                          {copy.face.previewUnavailable}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFrame(frame, "face")}
+                        className="relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:ring-primary"
+                        aria-label={`${previewLabel} · ${formatTimestamp(frame.timestamp_ms)} #${frame.frame_index}`}
+                      >
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={`Employee detection frame ${frame.frame_index}`}
+                            className="h-auto w-full object-cover transition duration-300 ease-out group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <div className="flex aspect-video w-full items-center justify-center bg-muted/60 text-xs font-medium text-muted-foreground">
+                            {copy.face.previewUnavailable}
+                          </div>
+                        )}
+                        {imageSrc ? (
+                          <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            {copy.face.viewLargerLabel}
+                          </span>
+                        ) : null}
+                      </button>
+                      <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
+                        <div className="font-medium text-foreground">
+                          {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
                         </div>
-                      )}
-                      {imageSrc ? (
-                        <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                          {copy.face.viewLargerLabel}
-                        </span>
-                      ) : null}
-                    </button>
-                    <figcaption className="space-y-1 border-t border-border/40 p-3 text-xs">
-                      <div className="font-medium text-foreground">
-                        {formatTimestamp(frame.timestamp_ms)} · #{frame.frame_index}
-                      </div>
-                      <div className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{copy.face.detectionsLabel}:</span> {detectionSummary}
-                      </div>
-                      <div className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">{copy.face.matchSummaryLabel}:</span> {matchSummary}
-                      </div>
-                    </figcaption>
-                  </figure>
-                )
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{copy.face.detectionsLabel}:</span> {detectionSummary}
+                        </div>
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{copy.face.matchSummaryLabel}:</span> {matchSummary}
+                        </div>
+                      </figcaption>
+                    </figure>
+                  )
               })}
+              </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">{copy.face.keyframesEmpty}</p>
@@ -409,7 +439,21 @@ export function MultiResultsDisplay({ results, copy, shouldAlert }: MultiResults
                         className="rounded-md border border-border/40 bg-background/70 px-3 py-2"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium text-foreground">{det.label}</span>
+                          <span className="flex items-center gap-2 text-foreground">
+                            <span className="font-medium">
+                              {det.label}
+                              {det.raw_label && det.raw_label !== det.label ? (
+                                <span className="ml-1 text-[11px] text-muted-foreground">
+                                  ({det.raw_label})
+                                </span>
+                              ) : null}
+                            </span>
+                            {det.is_cash ? (
+                              <span className="rounded-full bg-destructive/10 px-2 py-[1px] text-[10px] font-semibold text-destructive">
+                                现金
+                              </span>
+                            ) : null}
+                          </span>
                           <span className="font-mono text-xs text-muted-foreground">
                             {(det.confidence * 100).toFixed(1)}%
                           </span>
